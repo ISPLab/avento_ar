@@ -1,5 +1,8 @@
 {
   "dependencies": {
+    "com.unity.ai.assistant": "2.17.0-pre.1",
+    "com.unity.ai.inference": "2.6.1",
+    "com.unity.cloud.gltfast": "6.19.0",
     "com.unity.feature.development": "1.0.2",
     "com.unity.inputsystem": "1.20.0",
     "com.unity.learn.iet-framework": "5.0.4",
@@ -45,8 +48,6 @@
     "com.unity.modules.vehicles": "1.0.0",
     "com.unity.modules.video": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
-    "com.unity.modules.xr": "1.0.0",
-    "com.unity.ai.assistant": "2.17.0-pre.1",
-    "com.unity.ai.inference": "2.6.1"
+    "com.unity.modules.xr": "1.0.0"
   }
 }

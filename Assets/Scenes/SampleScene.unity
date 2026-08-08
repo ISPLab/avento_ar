@@ -869,10 +869,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 22ea4d515cb0450cbbab73570ce7c6ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_RaycastManager: {fileID: 0}
+  m_RaycastManager: {fileID: 900000022}
   m_AnchorManager: {fileID: 900000020}
-  m_Content: {fileID: 900001001}
-  m_ContentAnimator: {fileID: 900000006}
+  m_ContentPrefab: {fileID: 0}
+  m_ContentPrefabName: PlacedContent
+  m_BundleLoader: {fileID: 0}
+  m_PreferAssetBundle: 1
   m_LocalPositionOffset: {x: 0, y: 0, z: 0}
   m_ContentScale: 1
   m_ReplaceExistingPlacement: 1

@@ -1,0 +1,498 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace UnityEngine.XR.Templates.AR
+{
+    /// <summary>
+    /// Loads a self-contained PlacedContent AssetBundle from StreamingAssets,
+    /// persistent cache, a remote HTTPS URL, or an absolute path from the native host.
+    /// </summary>
+    public class PlacedContentBundleLoader : MonoBehaviour
+    {
+        public const string DefaultBundleFileName = "placedcontent";
+        public const string DefaultAssetName = "PlacedContent";
+
+        /// <summary>Catalog files like AssetBundles/iOS/iOS are ~1–2 KB; real content is multi‑MB.</summary>
+        public const long MinBundleBytes = 64 * 1024;
+
+        [SerializeField]
+        string m_BundleFileName = DefaultBundleFileName;
+
+        [SerializeField]
+        string m_AssetName = DefaultAssetName;
+
+        [Tooltip("Optional HTTPS URL to the platform AssetBundle (cloud). Leave empty to use local files only.")]
+        [SerializeField]
+        string m_RemoteBundleUrl;
+
+        [SerializeField]
+        bool m_LoadOnAwake = true;
+
+        AssetBundle m_Bundle;
+        GameObject m_Prefab;
+        bool m_Loading;
+        Coroutine m_LoadRoutine;
+        int m_LoadGeneration;
+        bool m_LoadFailedNotified;
+
+        public GameObject LoadedPrefab => m_Prefab;
+        public bool IsLoaded => m_Prefab != null;
+        public bool IsLoading => m_Loading;
+
+        public event Action<GameObject> PrefabLoaded;
+        public event Action<string> LoadFailed;
+
+        /// <summary>Override asset name before loading (UaaL host).</summary>
+        public void Configure(string assetName, string bundleFileName = null)
+        {
+            if (!string.IsNullOrWhiteSpace(assetName))
+                m_AssetName = assetName.Trim();
+            if (!string.IsNullOrWhiteSpace(bundleFileName))
+                m_BundleFileName = bundleFileName.Trim();
+        }
+
+        public void SetLoadOnAwake(bool enabled) => m_LoadOnAwake = enabled;
+
+        /// <summary>Load a bundle already downloaded by the native host (absolute path).</summary>
+        public void BeginLoadFromAbsolutePath(string absolutePath)
+        {
+            if (string.IsNullOrWhiteSpace(absolutePath))
+            {
+                NotifyFailed("Empty bundle path.");
+                return;
+            }
+
+            absolutePath = SanitizeAbsolutePath(absolutePath);
+
+            // Native path always wins — cancel StreamingAssets / cache probes started by TapToPlace.
+            CancelInFlightLoad();
+            m_LoadFailedNotified = false;
+            m_LoadRoutine = StartCoroutine(LoadAbsolutePathCoroutine(absolutePath));
+        }
+
+        static string SanitizeAbsolutePath(string absolutePath)
+        {
+            if (string.IsNullOrEmpty(absolutePath))
+                return absolutePath;
+
+            absolutePath = absolutePath.Replace("\\/", "/");
+            if (absolutePath.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    absolutePath = new Uri(absolutePath).LocalPath;
+                }
+                catch
+                {
+                    // keep as-is
+                }
+            }
+
+            return absolutePath;
+        }
+
+        IEnumerator LoadAbsolutePathCoroutine(string absolutePath)
+        {
+            var gen = ++m_LoadGeneration;
+            m_Loading = true;
+
+            if (!File.Exists(absolutePath))
+            {
+                if (gen == m_LoadGeneration)
+                {
+                    m_Loading = false;
+                    m_LoadRoutine = null;
+                    NotifyFailed(
+                        $"[PlacedContentBundle] File not found: {absolutePath}");
+                }
+
+                yield break;
+            }
+
+            var info = new FileInfo(absolutePath);
+            var header = ReadBundleHeader(absolutePath);
+            Debug.Log(
+                $"[PlacedContentBundle] Opening {absolutePath} size={info.Length} " +
+                $"magic={header.magic} unity={header.unityVersion}",
+                this);
+
+            if (info.Length < MinBundleBytes)
+            {
+                if (gen == m_LoadGeneration)
+                {
+                    m_Loading = false;
+                    m_LoadRoutine = null;
+                    NotifyFailed(
+                        $"[PlacedContentBundle] File too small ({info.Length} bytes) — " +
+                        "likely uploaded AssetBundles/iOS/iOS catalog instead of placedcontent (~20MB). " +
+                        $"path={absolutePath}");
+                }
+
+                yield break;
+            }
+
+            if (!string.Equals(header.magic, "UnityFS", StringComparison.Ordinal))
+            {
+                if (gen == m_LoadGeneration)
+                {
+                    m_Loading = false;
+                    m_LoadRoutine = null;
+                    NotifyFailed(
+                        $"[PlacedContentBundle] Not a Unity AssetBundle (magic={header.magic}). " +
+                        "Re-upload AssetBundles/iOS/placedcontent from Unity.");
+                }
+
+                yield break;
+            }
+
+            UnloadBundleOnly();
+            yield return LoadFromFile(absolutePath, gen, header);
+
+            if (gen != m_LoadGeneration)
+                yield break;
+
+            m_Loading = false;
+            m_LoadRoutine = null;
+            if (m_Prefab == null && !m_LoadFailedNotified)
+            {
+                NotifyFailed(
+                    $"Failed to load AssetBundle at {absolutePath} " +
+                    $"(size={info.Length}, magic={header.magic}, unity={header.unityVersion}). " +
+                    "Need iOS-built placedcontent matching this player (not Android, not the iOS catalog file).");
+            }
+        }
+
+        void Awake()
+        {
+            if (m_LoadOnAwake)
+                BeginLoad();
+        }
+
+        void OnDestroy()
+        {
+            CancelInFlightLoad();
+            Unload();
+        }
+
+        public void BeginLoad()
+        {
+            if (m_Prefab != null || m_Loading)
+                return;
+
+            CancelInFlightLoad();
+            m_LoadFailedNotified = false;
+            m_LoadRoutine = StartCoroutine(LoadCoroutine());
+        }
+
+        public IEnumerator LoadCoroutine()
+        {
+            var gen = ++m_LoadGeneration;
+            m_Loading = true;
+
+            var cachedPath = Path.Combine(Application.persistentDataPath, m_BundleFileName);
+            if (File.Exists(cachedPath))
+            {
+                yield return LoadFromFile(cachedPath, gen, ReadBundleHeader(cachedPath));
+                if (gen != m_LoadGeneration)
+                    yield break;
+                if (m_Prefab != null)
+                {
+                    m_Loading = false;
+                    m_LoadRoutine = null;
+                    yield break;
+                }
+            }
+
+            var streamingPath = Path.Combine(Application.streamingAssetsPath, m_BundleFileName);
+#if UNITY_ANDROID && !UNITY_EDITOR
+            yield return LoadFromUrl(streamingPath, gen);
+#else
+            if (File.Exists(streamingPath))
+                yield return LoadFromFile(streamingPath, gen, ReadBundleHeader(streamingPath));
+#endif
+            if (gen != m_LoadGeneration)
+                yield break;
+            if (m_Prefab != null)
+            {
+                m_Loading = false;
+                m_LoadRoutine = null;
+                yield break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(m_RemoteBundleUrl))
+            {
+                yield return DownloadAndCache(m_RemoteBundleUrl, cachedPath, gen);
+                if (gen != m_LoadGeneration)
+                    yield break;
+                if (m_Prefab != null)
+                {
+                    m_Loading = false;
+                    m_LoadRoutine = null;
+                    yield break;
+                }
+            }
+
+            if (gen != m_LoadGeneration)
+                yield break;
+
+            m_Loading = false;
+            m_LoadRoutine = null;
+            NotifyFailed(
+                $"[PlacedContentBundle] Failed to load '{m_BundleFileName}'. " +
+                "Build via menu AR Test → Build PlacedContent AssetBundle.");
+        }
+
+        IEnumerator DownloadAndCache(string url, string cachePath, int gen)
+        {
+            Debug.Log($"[PlacedContentBundle] Downloading {url}", this);
+            using var request = UnityWebRequest.Get(url);
+            yield return request.SendWebRequest();
+
+            if (gen != m_LoadGeneration)
+                yield break;
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[PlacedContentBundle] Download failed: {request.error}", this);
+                yield break;
+            }
+
+            try
+            {
+                File.WriteAllBytes(cachePath, request.downloadHandler.data);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PlacedContentBundle] Cache write failed: {ex.Message}", this);
+                yield break;
+            }
+
+            yield return LoadFromFile(cachePath, gen, ReadBundleHeader(cachePath));
+        }
+
+        IEnumerator LoadFromUrl(string url, int gen)
+        {
+            using var request = UnityWebRequestAssetBundle.GetAssetBundle(url);
+            yield return request.SendWebRequest();
+
+            if (gen != m_LoadGeneration)
+                yield break;
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogWarning($"[PlacedContentBundle] URL load failed: {request.error}", this);
+                yield break;
+            }
+
+            m_Bundle = DownloadHandlerAssetBundle.GetContent(request);
+            ExtractPrefab();
+        }
+
+        IEnumerator LoadFromFile(string path, int gen, BundleHeader header)
+        {
+            var request = AssetBundle.LoadFromFileAsync(path);
+            yield return request;
+
+            if (gen != m_LoadGeneration)
+                yield break;
+
+            m_Bundle = request.assetBundle;
+            if (m_Bundle == null)
+            {
+                // Fallback: some iOS paths fail LoadFromFile but succeed from memory.
+                Debug.LogWarning(
+                    $"[PlacedContentBundle] LoadFromFile returned null — trying LoadFromMemory " +
+                    $"(unity={header.unityVersion})",
+                    this);
+                byte[] bytes = null;
+                try
+                {
+                    bytes = File.ReadAllBytes(path);
+                }
+                catch (Exception ex)
+                {
+                    NotifyFailed($"Cannot read bundle bytes: {ex.Message}");
+                    yield break;
+                }
+
+                var memReq = AssetBundle.LoadFromMemoryAsync(bytes);
+                yield return memReq;
+                if (gen != m_LoadGeneration)
+                    yield break;
+                m_Bundle = memReq.assetBundle;
+            }
+
+            if (m_Bundle == null)
+            {
+                NotifyFailed(
+                    $"[PlacedContentBundle] LoadFromFile/Memory failed: {path} " +
+                    $"(magic={header.magic}, unity={header.unityVersion}). " +
+                    "Wrong platform (Android on iOS) or Unity version mismatch with the player.");
+                yield break;
+            }
+
+            ExtractPrefab();
+        }
+
+        void ExtractPrefab()
+        {
+            if (m_Bundle == null)
+                return;
+
+            m_Prefab = ResolvePrefab(m_Bundle, m_AssetName);
+            if (m_Prefab == null)
+            {
+                var names = ListAssetNames(m_Bundle);
+                NotifyFailed(
+                    $"Asset '{m_AssetName}' missing in bundle. Assets=[{names}]. " +
+                    "Upload AssetBundles/iOS/placedcontent (not the small 'iOS' catalog file).");
+                return;
+            }
+
+            Debug.Log($"[PlacedContentBundle] Ready: '{m_Prefab.name}'", this);
+            PrefabLoaded?.Invoke(m_Prefab);
+        }
+
+        static GameObject ResolvePrefab(AssetBundle bundle, string assetName)
+        {
+            if (bundle == null)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(assetName))
+            {
+                var direct = bundle.LoadAsset<GameObject>(assetName);
+                if (direct != null)
+                    return direct;
+
+                // Manifest stores full path; some loaders need it.
+                var byPath = bundle.LoadAsset<GameObject>("Assets/" + assetName + ".prefab");
+                if (byPath != null)
+                    return byPath;
+                byPath = bundle.LoadAsset<GameObject>("Assets/PlacedContent.prefab");
+                if (byPath != null)
+                    return byPath;
+            }
+
+            var all = bundle.LoadAllAssets<GameObject>();
+            if (all == null || all.Length == 0)
+                return null;
+
+            for (var i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && all[i].name == "PlacedContent")
+                    return all[i];
+            }
+
+            return all[0];
+        }
+
+        static string ListAssetNames(AssetBundle bundle)
+        {
+            try
+            {
+                var names = bundle.GetAllAssetNames();
+                if (names == null || names.Length == 0)
+                    return "(none)";
+                var n = Math.Min(names.Length, 12);
+                var sb = new StringBuilder();
+                for (var i = 0; i < n; i++)
+                {
+                    if (i > 0)
+                        sb.Append(", ");
+                    sb.Append(names[i]);
+                }
+
+                if (names.Length > n)
+                    sb.Append(", …");
+                return sb.ToString();
+            }
+            catch
+            {
+                return "(unavailable)";
+            }
+        }
+
+        struct BundleHeader
+        {
+            public string magic;
+            public string unityVersion;
+        }
+
+        static BundleHeader ReadBundleHeader(string path)
+        {
+            var header = new BundleHeader { magic = "(unreadable)", unityVersion = "?" };
+            try
+            {
+                using var fs = File.OpenRead(path);
+                var buf = new byte[64];
+                var n = fs.Read(buf, 0, buf.Length);
+                if (n < 7)
+                {
+                    header.magic = n <= 0 ? "(empty)" : "(short)";
+                    return header;
+                }
+
+                header.magic = Encoding.ASCII.GetString(buf, 0, 7);
+                // UnityFS\0 + int32 version + null-terminated unity version string
+                if (n > 12 && header.magic == "UnityFS")
+                {
+                    var verStart = 12;
+                    var verEnd = verStart;
+                    while (verEnd < n && buf[verEnd] != 0)
+                        verEnd++;
+                    if (verEnd > verStart)
+                        header.unityVersion = Encoding.ASCII.GetString(buf, verStart, verEnd - verStart);
+                }
+            }
+            catch (Exception ex)
+            {
+                header.magic = $"(read-error:{ex.Message})";
+            }
+
+            return header;
+        }
+
+        void NotifyFailed(string message)
+        {
+            if (m_LoadFailedNotified)
+                return;
+            m_LoadFailedNotified = true;
+            Debug.LogError(message, this);
+            LoadFailed?.Invoke(message);
+        }
+
+        void CancelInFlightLoad()
+        {
+            m_LoadGeneration++;
+            if (m_LoadRoutine != null)
+            {
+                StopCoroutine(m_LoadRoutine);
+                m_LoadRoutine = null;
+            }
+
+            m_Loading = false;
+        }
+
+        void UnloadBundleOnly()
+        {
+            m_Prefab = null;
+            if (m_Bundle != null)
+            {
+                m_Bundle.Unload(false);
+                m_Bundle = null;
+            }
+        }
+
+        public void Unload()
+        {
+            CancelInFlightLoad();
+            UnloadBundleOnly();
+            m_LoadFailedNotified = false;
+        }
+    }
+}
