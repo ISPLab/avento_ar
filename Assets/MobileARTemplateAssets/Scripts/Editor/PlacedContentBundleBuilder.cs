@@ -1,14 +1,15 @@
 #if UNITY_EDITOR
 using System.IO;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
 namespace UnityEngine.XR.Templates.AR.Editor
 {
     /// <summary>
-    /// Builds a single AssetBundle that contains PlacedContent + all dependencies
-    /// (materials, shaders, video clips, etc.) for cloud / remote download.
-    /// Prefab files alone are not self-contained — this is the "one file" packaging step.
+    /// Builds a self-contained AssetBundle (prefab + dependencies) for cloud / remote download.
+    /// Default menus pack <c>Assets/PlacedContent.prefab</c>; selected-prefab menus pack any prefab
+    /// (bundle file name = lowercased prefab name).
     /// </summary>
     public static class PlacedContentBundleBuilder
     {
@@ -19,19 +20,45 @@ namespace UnityEngine.XR.Templates.AR.Editor
         [MenuItem("AR Test/Build PlacedContent AssetBundle (active platform)")]
         public static void BuildForActivePlatform()
         {
-            Build(EditorUserBuildSettings.activeBuildTarget, interactive: true);
+            Build(PrefabPath, BundleName, EditorUserBuildSettings.activeBuildTarget, interactive: true);
         }
 
         [MenuItem("AR Test/Build PlacedContent AssetBundle (iOS)")]
         public static void BuildForIos()
         {
-            Build(BuildTarget.iOS, interactive: true);
+            Build(PrefabPath, BundleName, BuildTarget.iOS, interactive: true);
         }
 
         [MenuItem("AR Test/Build PlacedContent AssetBundle (Android)")]
         public static void BuildForAndroid()
         {
-            Build(BuildTarget.Android, interactive: true);
+            Build(PrefabPath, BundleName, BuildTarget.Android, interactive: true);
+        }
+
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (active platform)")]
+        public static void BuildSelectedForActivePlatform()
+        {
+            BuildSelected(EditorUserBuildSettings.activeBuildTarget);
+        }
+
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (iOS)")]
+        public static void BuildSelectedForIos()
+        {
+            BuildSelected(BuildTarget.iOS);
+        }
+
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (Android)")]
+        public static void BuildSelectedForAndroid()
+        {
+            BuildSelected(BuildTarget.Android);
+        }
+
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (active platform)", true)]
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (iOS)", true)]
+        [MenuItem("AR Test/Build AssetBundle from selected prefab (Android)", true)]
+        public static bool ValidateBuildSelected()
+        {
+            return TryGetSelectedPrefabPath(out _);
         }
 
         /// <summary>
@@ -40,7 +67,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
         /// </summary>
         public static void BuildForIosBatch()
         {
-            var ok = Build(BuildTarget.iOS, interactive: false);
+            var ok = Build(PrefabPath, BundleName, BuildTarget.iOS, interactive: false);
             EditorApplication.Exit(ok ? 0 : 1);
         }
 
@@ -50,20 +77,76 @@ namespace UnityEngine.XR.Templates.AR.Editor
         /// </summary>
         public static void BuildForAndroidBatch()
         {
-            var ok = Build(BuildTarget.Android, interactive: false);
+            var ok = Build(PrefabPath, BundleName, BuildTarget.Android, interactive: false);
             EditorApplication.Exit(ok ? 0 : 1);
         }
 
-        static bool Build(BuildTarget target, bool interactive)
+        static void BuildSelected(BuildTarget target)
         {
-            if (!File.Exists(PrefabPath))
+            if (!TryGetSelectedPrefabPath(out var prefabPath))
             {
-                var msg = $"Missing prefab at:\n{PrefabPath}";
+                EditorUtility.DisplayDialog(
+                    "AssetBundle",
+                    "Select a prefab in the Project window first.",
+                    "OK");
+                return;
+            }
+
+            var assetName = Path.GetFileNameWithoutExtension(prefabPath);
+            var bundleName = SanitizeBundleName(assetName);
+            Build(prefabPath, bundleName, target, interactive: true, displayAssetName: assetName);
+        }
+
+        static bool TryGetSelectedPrefabPath(out string prefabPath)
+        {
+            prefabPath = null;
+            var guids = Selection.assetGUIDs;
+            if (guids == null || guids.Length == 0)
+                return false;
+
+            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
+            if (string.IsNullOrEmpty(path) || !path.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null)
+                return false;
+
+            prefabPath = path;
+            return true;
+        }
+
+        /// <summary>
+        /// Unity AssetBundle names must be lowercase; keep alphanumerics + underscore/dash.
+        /// </summary>
+        public static string SanitizeBundleName(string assetOrFileName)
+        {
+            if (string.IsNullOrWhiteSpace(assetOrFileName))
+                return "content";
+
+            var lower = assetOrFileName.Trim().ToLowerInvariant();
+            lower = Regex.Replace(lower, @"[^a-z0-9_\-]+", "");
+            return string.IsNullOrEmpty(lower) ? "content" : lower;
+        }
+
+        static bool Build(
+            string prefabPath,
+            string bundleName,
+            BuildTarget target,
+            bool interactive,
+            string displayAssetName = null)
+        {
+            if (!File.Exists(prefabPath))
+            {
+                var msg = $"Missing prefab at:\n{prefabPath}";
                 Debug.LogError($"[PlacedContentBundle] {msg}");
                 if (interactive)
-                    EditorUtility.DisplayDialog("PlacedContent Bundle", msg, "OK");
+                    EditorUtility.DisplayDialog("AssetBundle", msg, "OK");
                 return false;
             }
+
+            var assetName = string.IsNullOrEmpty(displayAssetName)
+                ? Path.GetFileNameWithoutExtension(prefabPath)
+                : displayAssetName;
 
             var platformFolder = target.ToString();
             var outputDir = Path.Combine(OutputRoot, platformFolder);
@@ -71,8 +154,8 @@ namespace UnityEngine.XR.Templates.AR.Editor
 
             var build = new AssetBundleBuild
             {
-                assetBundleName = BundleName,
-                assetNames = new[] { PrefabPath }
+                assetBundleName = bundleName,
+                assetNames = new[] { prefabPath }
             };
 
             var manifest = BuildPipeline.BuildAssetBundles(
@@ -88,7 +171,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 if (interactive)
                 {
                     EditorUtility.DisplayDialog(
-                        "PlacedContent Bundle",
+                        "AssetBundle",
                         "Build failed. See Console for details.",
                         "OK");
                 }
@@ -96,24 +179,31 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 return false;
             }
 
-            var bundlePath = Path.Combine(outputDir, BundleName);
+            var bundlePath = Path.Combine(outputDir, bundleName);
             var sizeMb = File.Exists(bundlePath)
                 ? new FileInfo(bundlePath).Length / (1024f * 1024f)
                 : 0f;
 
             Debug.Log(
                 $"[PlacedContentBundle] Built for {target}:\n{Path.GetFullPath(bundlePath)}\n" +
+                $"Prefab: {prefabPath}\n" +
+                $"unityAssetName: {assetName}\n" +
+                $"unityBundleFileName: {bundleName}\n" +
                 $"Size ≈ {sizeMb:F2} MB\n" +
-                "Upload this file to cloud CDN. App downloads it, then Instantiate from the bundle.",
-                AssetDatabase.LoadAssetAtPath<Object>(PrefabPath));
+                "Upload this file in avento-web (Unity Scene). Set asset name if not PlacedContent.",
+                AssetDatabase.LoadAssetAtPath<Object>(prefabPath));
 
             if (interactive)
             {
                 EditorUtility.RevealInFinder(bundlePath);
                 EditorUtility.DisplayDialog(
-                    "PlacedContent Bundle",
-                    $"Built OK for {target}\n\n{bundlePath}\n≈ {sizeMb:F2} MB\n\n" +
-                    "This one file includes the prefab + materials/shaders/videos it references.\n" +
+                    "AssetBundle",
+                    $"Built OK for {target}\n\n" +
+                    $"{bundlePath}\n≈ {sizeMb:F2} MB\n\n" +
+                    $"Prefab: {prefabPath}\n" +
+                    $"avento-web → unityAssetName: {assetName}\n" +
+                    $"avento-web → unityBundleFileName: {bundleName}\n\n" +
+                    "Upload this one file (prefab + materials/shaders/videos).\n" +
                     "Build separate bundles per platform (iOS / Android).",
                     "OK");
             }

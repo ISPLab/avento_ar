@@ -121,18 +121,21 @@ unityBundleFileName?: string;    // default "placedcontent"
 | Task | Status / notes |
 |------|----------------|
 | Prefab `PlacedContent` + multi Instantiate placement | Done in AR_TEST |
-| Editor: build AssetBundle (iOS / Android) | `PlacedContentBundleBuilder` |
+| Editor: build AssetBundle (iOS / Android) | `PlacedContentBundleBuilder` (default + selected prefab) |
 | Runtime loader (file / StreamingAssets / HTTPS) | `PlacedContentBundleLoader` |
 | Document build → upload path for partners | This readme |
-| Stabilize bundle naming: `placedcontent` + asset `PlacedContent` | Lock as contract |
+| Default naming: `placedcontent` + asset `PlacedContent` | Default contract; overrides via offer fields |
+| Per-offer content variants | Select prefab → build → upload URL + `unityAssetName` |
 | CI optional: build bundles on Unity Cloud / local script | Later |
 
 **Partner workflow**
 
-1. Author scene in Unity (`PlacedContent`).
-2. `AR Test → Build PlacedContent AssetBundle (iOS)` and `(Android)`.
-3. Upload both files in avento-web admin.
-4. Publish offer.
+1. Author a prefab in Unity (default `PlacedContent`, or any content prefab per offer).
+2. Build:
+   - Default: `AR Test → Build PlacedContent AssetBundle (iOS)` / `(Android)` → `AssetBundles/<platform>/placedcontent`
+   - Or select a prefab → `AR Test → Build AssetBundle from selected prefab (iOS)` → file named after the prefab (lowercased)
+3. Upload the platform file in avento-web (Unity Scene). If not `PlacedContent`, set **unityAssetName** to the prefab name (and optionally **unityBundleFileName**).
+4. Publish offer. Different offers can point at different uploaded bundles.
 
 ---
 
@@ -392,7 +395,11 @@ From `AR_TEST` (close Unity Editor first — batchmode needs the project unlocke
 ./scripts/rebuild-ios-uaal.sh
 ```
 
-What it does:
+Bare run = **`--skip-bundle --skip-upload-hint`**: export UaaL → build UnityFramework → integrate into avento-app (same day-to-day player rebuild as before). Content bundles are built/uploaded separately.
+
+Optional: `-i` / `--interactive` for a step menu; `--full` for all steps including AssetBundle + Finder upload hint.
+
+What a full run does:
 1. Builds `AssetBundles/iOS/placedcontent` (~20MB) and reveals it in Finder  
 2. Prints **avento-web → Unity Scene → Upload iOS bundle** reminder  
 3. Exports UaaL → `Builds/iOS_UaaL`  
@@ -400,7 +407,7 @@ What it does:
 5. Runs `avento-app/scripts/integrate-unity-ios.sh`  
 6. Opens `avento-app` Xcode project  
 
-Useful flags: `--skip-bundle` · `--skip-export` · `--skip-fw` · `--skip-integrate` · `--skip-upload-hint` · `--no-open`
+Useful flags: `-i` · `--defaults` · `--full` · `--skip-bundle` · `--skip-export` · `--skip-fw` · `--skip-integrate` · `--skip-upload-hint` · `--no-open`
 
 Then in Xcode: **Clean Build Folder → Run on iPhone**.
 
@@ -411,14 +418,15 @@ Two passes: **A** proves admin → app → native download/cache (no UnityFramew
 **1. Build the iOS AssetBundle (Unity / AR_TEST)**
 
 1. Open this project in Unity (`6000.5.x`).
-2. Menu **AR Test → Build PlacedContent AssetBundle (iOS)**.
-3. Confirm output: `AssetBundles/iOS/placedcontent` (no extension).
+2. Menu **AR Test → Build PlacedContent AssetBundle (iOS)**  
+   (or select another prefab → **Build AssetBundle from selected prefab (iOS)**).
+3. Confirm output: `AssetBundles/iOS/placedcontent` (or `<prefname>`), no extension.
 
 **2. Upload in avento-web**
 
 1. Edit an offer → **VR Experience** → add item → mode **Unity Scene**.
 2. Upload the iOS file to **iOS AssetBundle** (Android can wait for this first test).
-3. Leave asset name `PlacedContent` and bundle file name `placedcontent` unless you changed them.
+3. Default: asset name `PlacedContent`, bundle file name `placedcontent`. For a selected-prefab build, set **unityAssetName** to that prefab’s name.
 4. Save / publish the offer so the native app can open it.
 
 **3. Run avento-app on a physical iPhone**
@@ -490,6 +498,12 @@ Xcode project is wired: `UnityUaaL/UnityFramework.framework` (Embed & Sign), `Un
 ---
 
 ## 11. Implementation log
+
+### 2026-08-08 — Multi-content bundles + interactive rebuild defaults
+
+- Unity: **AR Test → Build AssetBundle from selected prefab** (iOS/Android/active); file name = lowercased prefab name; dialog shows `unityAssetName` / `unityBundleFileName` for avento-web.
+- Loader resolves prefabs under subfolders by path stem / GO name (not only `PlacedContent`).
+- `./scripts/rebuild-ios-uaal.sh` bare = UaaL player rebuild (`--skip-bundle --skip-upload-hint`); `-i` for interactive toggles; `--full` for everything.
 
 ### 2026-08-08 — Tap places nothing after successful bundle load
 

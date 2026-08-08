@@ -376,11 +376,40 @@ namespace UnityEngine.XR.Templates.AR
                 byPath = bundle.LoadAsset<GameObject>("Assets/PlacedContent.prefab");
                 if (byPath != null)
                     return byPath;
+
+                // Prefabs under subfolders: match GetAllAssetNames by file stem.
+                var names = bundle.GetAllAssetNames();
+                if (names != null)
+                {
+                    var needle = "/" + assetName.Trim().ToLowerInvariant() + ".prefab";
+                    for (var i = 0; i < names.Length; i++)
+                    {
+                        var n = names[i];
+                        if (string.IsNullOrEmpty(n))
+                            continue;
+                        if (n.EndsWith(needle, System.StringComparison.OrdinalIgnoreCase) ||
+                            n.Equals(assetName, System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            var fromList = bundle.LoadAsset<GameObject>(n);
+                            if (fromList != null)
+                                return fromList;
+                        }
+                    }
+                }
             }
 
             var all = bundle.LoadAllAssets<GameObject>();
             if (all == null || all.Length == 0)
                 return null;
+
+            if (!string.IsNullOrWhiteSpace(assetName))
+            {
+                for (var i = 0; i < all.Length; i++)
+                {
+                    if (all[i] != null && all[i].name == assetName)
+                        return all[i];
+                }
+            }
 
             for (var i = 0; i < all.Length; i++)
             {
