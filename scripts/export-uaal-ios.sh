@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Batch-export AR_TEST as Unity-as-a-Library (iOS).
+# Batch-export avento-ar as Unity-as-a-Library (iOS).
 set -euo pipefail
 
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.5.6f1/Unity.app/Contents/MacOS/Unity}"
-PROJECT="${PROJECT:-/Users/andreyorlov/AR_TEST}"
+PROJECT="${PROJECT:-/Users/andreyorlov/Projects/atlyx-project/avento-ar}"
 OUT="${OUT:-$PROJECT/Builds/iOS_UaaL}"
 LOG="${LOG:-$PROJECT/Builds/uaal-ios-export.log}"
 

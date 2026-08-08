@@ -53,7 +53,7 @@ If yellow still never increments → check Xcode console for `touchesBegan` / `C
 
 | Project | Absolute path (this machine) | Role |
 |---------|------------------------------|------|
-| **AR_TEST** | `/Users/andreyorlov/AR_TEST` | Unity 6000.5.x content + UaaL iOS export + AssetBundles |
+| **avento-ar** | `/Users/andreyorlov/Projects/atlyx-project/avento-ar` | Unity 6000.5.x content + UaaL iOS export + AssetBundles |
 | **avento-web** | `/Users/andreyorlov/Projects/atlyx-project/avento-web` | Admin: upload iOS/Android bundles, store URLs in offer VR JSON |
 | **avento-app** | `/Users/andreyorlov/Projects/atlyx-project/avento-app` | Capacitor iOS/Android shell; downloads bundle; embeds Unity |
 
@@ -96,7 +96,7 @@ Mode name in product: **`unity_scene`**.
 └───────────────────────┬────────────────────────────┘
                         │
 ┌───────────────────────▼────────────────────────────┐
-│ Unity (inside UnityFramework) — AR_TEST export     │
+│ Unity (inside UnityFramework) — avento-ar export     │
 │  AventoUnityHostBootstrap → GO "AventoUnityHost"   │
 │  OpenFromNative → PlacedContentBundleLoader        │
 │  → TapToPlaceOnAnchor.contentPrefab = PlacedContent│
@@ -123,7 +123,7 @@ Platform rule: **iOS player can only load iOS-built `placedcontent`** (never And
 
 ---
 
-### AR_TEST — Unity files
+### avento-ar — Unity files
 
 | File | Purpose |
 |------|---------|
@@ -231,18 +231,18 @@ msg: "n,<nx>,<ny>"   // normalized, origin bottom-left
 | You changed… | Run |
 |--------------|-----|
 | Prefab / materials / video in Unity | Build iOS AssetBundle → **re-upload** in avento-web |
-| C# in AR_TEST (`TapToPlace`, Host, Loader, …) | `./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint` → Xcode Run |
+| C# in avento-ar (`TapToPlace`, Host, Loader, …) | `./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint` → Xcode Run |
 | Only `UnityArEmbeddedHost.mm` / Swift plugin | Xcode Clean → Run avento-app (**no** Unity re-export) |
 | Fresh everything | `./scripts/rebuild-ios-uaal.sh` then upload new `placedcontent` if rebuilt |
 
 ```bash
-# From AR_TEST
+# From avento-ar
 ./scripts/rebuild-ios-uaal.sh
 # or partial:
 ./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint
 
 # Integrate only (from avento-app):
-./scripts/integrate-unity-ios.sh /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL
+./scripts/integrate-unity-ios.sh /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL
 ```
 
 **Critical:** `UnityFramework.framework` and `Data/` must be from the **same** Unity export (mismatch → `EXC_BAD_ACCESS` in IL2CPP metadata).
@@ -267,7 +267,7 @@ msg: "n,<nx>,<ny>"   // normalized, origin bottom-left
 
 | Repo | Role |
 |------|------|
-| `AR_TEST` (this project) | Unity content authoring, AssetBundle build, tap-to-place / PlacedContent |
+| `avento-ar` (this project) | Unity content authoring, AssetBundle build, tap-to-place / PlacedContent |
 | `avento-web` | Admin upload + `sections_data.vr` JSON |
 | `avento-app` | Offer UI + Capacitor plugin → UaaL |
 
@@ -319,7 +319,7 @@ avento-app OfferViewSheet
 └───────────────────────┬─────────────────────────────────┘
                         │ UaaL embed
 ┌───────────────────────▼─────────────────────────────────┐
-│ Unity library (from AR_TEST export)                     │
+│ Unity library (from avento-ar export)                     │
 │  • AR Foundation (ARKit / ARCore)                       │
 │  • PlacedContentBundleLoader                            │
 │  • TapToPlaceOnAnchor (multi-place)                     │
@@ -375,11 +375,11 @@ unityBundleFileName?: string;    // default "placedcontent"
 
 ## 4. Phase plan
 
-### Phase 0 — Content pipeline (AR_TEST) ✅ partially done
+### Phase 0 — Content pipeline (avento-ar) ✅ partially done
 
 | Task | Status / notes |
 |------|----------------|
-| Prefab `PlacedContent` + multi Instantiate placement | Done in AR_TEST |
+| Prefab `PlacedContent` + multi Instantiate placement | Done in avento-ar |
 | Editor: build AssetBundle (iOS / Android) | `PlacedContentBundleBuilder` |
 | Runtime loader (file / StreamingAssets / HTTPS) | `PlacedContentBundleLoader` |
 | Document build → upload path for partners | This readme |
@@ -498,7 +498,7 @@ await UnityArSession.openScene({
 
 ### Phase 4 — Unity as a Library embed
 
-Export **AR_TEST** (or a slimmed `avento-unity-host` project) as UaaL and link into Capacitor projects.
+Export **avento-ar** (or a slimmed `avento-unity-host` project) as UaaL and link into Capacitor projects.
 
 #### 4.1 Unity project prep
 
@@ -584,12 +584,12 @@ Unity host + iOS plugin branch are in place. Full on-device AR still needs a Uni
 
 | Area | Owner repo | Key paths |
 |------|------------|-----------|
-| Bundle build | AR_TEST | `Assets/.../PlacedContentBundleBuilder.cs`, `AssetBundles/` |
-| Bundle load in Unity | AR_TEST | `PlacedContentBundleLoader.cs`, `TapToPlaceOnAnchor.cs` |
+| Bundle build | avento-ar | `Assets/.../PlacedContentBundleBuilder.cs`, `AssetBundles/` |
+| Bundle load in Unity | avento-ar | `PlacedContentBundleLoader.cs`, `TapToPlaceOnAnchor.cs` |
 | Types + admin UI | avento-web | `offerVr.ts`, `vr-upload.ts`, `VrExperienceSection.tsx` |
 | Types + viewers | avento-app | `offer-vr.ts`, `VrOfferViewer.tsx`, `capabilities.ts` |
 | Native bridge | avento-app | new Capacitor plugin + `ios/` + `android/` UaaL glue |
-| This plan | AR_TEST | `readme.avento.md` |
+| This plan | avento-ar | `readme.avento.md` |
 
 ---
 
@@ -613,7 +613,7 @@ Do **not** wait for full UaaL before M1–M2; partners can start producing bundl
 | App size jump (Unity + AR) | On-demand feature module later; strip unused Unity modules; compress bundles |
 | UaaL + Capacitor lifecycle bugs | Single Unity instance; pause when backgrounded; explicit dismiss |
 | Shader / URP mismatch in bundles | Build bundles with same Unity/URP version as player |
-| ProRes / alpha video in bundles | Prefer H.264 + black-key or platform alpha formats already proven in AR_TEST |
+| ProRes / alpha video in bundles | Prefer H.264 + black-key or platform alpha formats already proven in avento-ar |
 | Two platforms to maintain | Automate bundle builds; admin forces both uploads before publish (optional validation) |
 
 ---
@@ -645,7 +645,7 @@ Web admin preview: image only. Browser PWA: unsupported / preview (same as other
 
 ### One-shot iOS rebuild script
 
-From `AR_TEST` (close Unity Editor first — batchmode needs the project unlocked):
+From `avento-ar` (close Unity Editor first — batchmode needs the project unlocked):
 
 ```bash
 ./scripts/rebuild-ios-uaal.sh
@@ -667,7 +667,7 @@ Two passes: **A** proves admin → app → native download/cache (no UnityFramew
 
 ### A — Placeholder smoke test (no Unity embed)
 
-**1. Build the iOS AssetBundle (Unity / AR_TEST)**
+**1. Build the iOS AssetBundle (Unity / avento-ar)**
 
 1. Open this project in Unity (`6000.5.x`).
 2. Menu **AR Test → Build PlacedContent AssetBundle (iOS)**.
@@ -697,7 +697,7 @@ If the CTA is missing or greyed: confirm mode is `unity_scene`, iOS bundle URL i
 
 ### B — Real Unity AR (after UaaL link) — **do this now**
 
-Pass **A** is done. Unity Editor is already open on `AR_TEST` — use it for the export (do not start a second batchmode instance).
+Pass **A** is done. Unity Editor is already open on `avento-ar` — use it for the export (do not start a second batchmode instance).
 
 **1. Export Unity as a Library (in the open Unity Editor)**
 
@@ -709,13 +709,13 @@ Pass **A** is done. Unity Editor is already open on `AR_TEST` — use it for the
 **Alternate (Editor closed):**
 
 ```bash
-/Users/andreyorlov/AR_TEST/scripts/export-uaal-ios.sh
+/Users/andreyorlov/Projects/atlyx-project/avento-ar/scripts/export-uaal-ios.sh
 ```
 
 **2. Build UnityFramework once**
 
 ```bash
-open /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL/Unity-iPhone.xcodeproj
+open /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL/Unity-iPhone.xcodeproj
 ```
 
 1. Select the **UnityFramework** scheme (or build the Unity-iPhone project so the framework is produced).
@@ -726,7 +726,7 @@ open /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL/Unity-iPhone.xcodeproj
 
 ```bash
 cd /Users/andreyorlov/Projects/atlyx-project/avento-app
-./scripts/integrate-unity-ios.sh /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL
+./scripts/integrate-unity-ios.sh /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL
 ```
 
 Xcode project is wired: `UnityUaaL/UnityFramework.framework` (Embed & Sign), `UnityUaaL/Data` in Resources, `AVENTO_UNITY_EMBEDDED=1`.
@@ -769,7 +769,7 @@ Common causes after path/`\/` fix:
 
 **Fix:** reject files &lt; 64KB; LoadFromMemory fallback; clearer asset-list errors; delete bad cache on Unity error.
 
-Upload exactly: `AR_TEST/AssetBundles/iOS/placedcontent` (no extension, ~20MB).
+Upload exactly: `avento-ar/AssetBundles/iOS/placedcontent` (no extension, ~20MB).
 
 ---
 
@@ -820,7 +820,7 @@ iOS `NSJSONSerialization` emits `\/` in paths. Hand-rolled JSON slice kept the b
 
 ### 2026-08-07 — M4 iOS UaaL vertical slice (wiring)
 
-**AR_TEST (Unity host)**
+**avento-ar (Unity host)**
 - `AventoUnityHost.cs` — `OpenFromNative` / `DismissFromNative` via `UnitySendMessage`; loads absolute-path AssetBundle; wires `TapToPlaceOnAnchor`; Exit AR → native callback
 - `AventoUnityNative.cs` — iOS `DllImport` + Android JNI stubs (`OnReady` / `OnSessionEnded` / `OnError`)
 - `AventoUnityHostBootstrap.cs` — auto-creates host GO after scene load
@@ -847,17 +847,17 @@ Installing
 Your next steps (in order)
 1. In Unity (already open)
 Menu: AR Test → UaaL → Export iOS Library Project…
-Save to: /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL
+Save to: /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL
 
 2. Build UnityFramework once
 
-open /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL/Unity-iPhone.xcodeproj
+open /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL/Unity-iPhone.xcodeproj
 Build the UnityFramework target for a device.
 
 3. Integrate into avento-app
 
 cd /Users/andreyorlov/Projects/atlyx-project/avento-app
-./scripts/integrate-unity-ios.sh /Users/andreyorlov/AR_TEST/Builds/iOS_UaaL
+./scripts/integrate-unity-ios.sh /Users/andreyorlov/Projects/atlyx-project/avento-ar/Builds/iOS_UaaL
 Then in Xcode: Embed & Sign UnityFramework, add Data, set AVENTO_UNITY_EMBEDDED=1, run on iPhone.
 
 4. Verify

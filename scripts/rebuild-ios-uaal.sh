@@ -1,65 +1,70 @@
 #!/usr/bin/env bash
-# Avento iOS pipeline:
-#   1) Build PlacedContent AssetBundle (iOS)
-#   2) Reveal file for avento-web upload (Unity Scene → Upload iOS bundle)
-#   3) Export Unity as a Library (iOS)
-#   4) xcodebuild UnityFramework
-#   5) integrate into avento-app
-#   6) Open avento-app Xcode project
+# Avento UaaL rebuild — iOS and/or Android into avento-app.
+#
+# Bare run (default):
+#   --skip-bundle --skip-upload-hint
+#   rebuilds iOS (export → UnityFramework → integrate)
+#   AND Android (export Google project → integrate unityLibrary)
 #
 # Usage:
 #   ./scripts/rebuild-ios-uaal.sh
-#       → same as --skip-bundle --skip-upload-hint (rebuild UaaL player into avento-app)
+#   ./scripts/rebuild-ios-uaal.sh --ios-only
+#   ./scripts/rebuild-ios-uaal.sh --android-only
 #   ./scripts/rebuild-ios-uaal.sh -i|--interactive
-#       → toggle steps; preselected defaults = skip bundle + upload hint
-#   ./scripts/rebuild-ios-uaal.sh --full                             # all steps (no skips)
-#   ./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint   # same as bare run
-#   ./scripts/rebuild-ios-uaal.sh --skip-export
-#   ./scripts/rebuild-ios-uaal.sh --no-open
+#   ./scripts/rebuild-ios-uaal.sh --full
+#   ./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint
 #
-# Env overrides:
-#   UNITY=/Applications/Unity/Hub/Editor/6000.5.6f1/Unity.app/Contents/MacOS/Unity
-#   PROJECT=/Users/andreyorlov/AR_TEST
-#   AVENTO_APP=/Users/andreyorlov/Projects/atlyx-project/avento-app
-#   OUT=$PROJECT/Builds/iOS_UaaL
-#   IOS_DEVICE=                              # optional udid for xcodebuild -destination
+# Env:
+#   UNITY PROJECT AVENTO_APP
+#   OUT_IOS=$PROJECT/Builds/iOS_UaaL
+#   OUT_ANDROID=$PROJECT/Builds/Android_UaaL
+#   (OUT= still aliases OUT_IOS for compatibility)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT="${PROJECT:-$ROOT}"
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.5.6f1/Unity.app/Contents/MacOS/Unity}"
 AVENTO_APP="${AVENTO_APP:-/Users/andreyorlov/Projects/atlyx-project/avento-app}"
-OUT="${OUT:-$PROJECT/Builds/iOS_UaaL}"
+OUT_IOS="${OUT_IOS:-${OUT:-$PROJECT/Builds/iOS_UaaL}}"
+OUT_ANDROID="${OUT_ANDROID:-$PROJECT/Builds/Android_UaaL}"
 LOG_DIR="${LOG_DIR:-$PROJECT/Builds}"
-BUNDLE_PATH="$PROJECT/AssetBundles/iOS/placedcontent"
+BUNDLE_IOS="$PROJECT/AssetBundles/iOS/placedcontent"
+BUNDLE_ANDROID="$PROJECT/AssetBundles/Android/placedcontent"
 MIN_BUNDLE_BYTES=$((64 * 1024))
 
-# Defaults match day-to-day UaaL rebuild (content upload is separate).
+# Day-to-day defaults: refresh players, skip content packs.
 SKIP_BUNDLE=1
-SKIP_EXPORT=0
 SKIP_UPLOAD_HINT=1
+SKIP_EXPORT=0
 SKIP_FW=0
 SKIP_INTEGRATE=0
 NO_OPEN=0
+DO_IOS=1
+DO_ANDROID=1
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 flag_label() {
-  # $1 = skip flag (1=skipped); invert for "will run"
   if [[ "$1" -eq 0 ]]; then echo "ON "; else echo "off"; fi
+}
+
+platform_label() {
+  if [[ "$1" -eq 1 ]]; then echo "ON "; else echo "off"; fi
 }
 
 print_plan() {
   echo ""
   echo "Plan (toggle with number, then Enter to start):"
-  echo "  [1] Build PlacedContent AssetBundle   $(flag_label "$SKIP_BUNDLE")"
+  echo "  [1] Build AssetBundles (iOS+Android)  $(flag_label "$SKIP_BUNDLE")"
   echo "  [2] Upload hint (reveal in Finder)    $(flag_label "$SKIP_UPLOAD_HINT")"
-  echo "  [3] Export UaaL Xcode project         $(flag_label "$SKIP_EXPORT")"
-  echo "  [4] xcodebuild UnityFramework         $(flag_label "$SKIP_FW")"
+  echo "  [3] Export UaaL projects              $(flag_label "$SKIP_EXPORT")"
+  echo "  [4] xcodebuild UnityFramework (iOS)   $(flag_label "$SKIP_FW")"
   echo "  [5] Integrate into avento-app         $(flag_label "$SKIP_INTEGRATE")"
-  echo "  [6] Open Xcode at end                 $(flag_label "$NO_OPEN")"
+  echo "  [6] Open IDE at end                   $(flag_label "$NO_OPEN")"
+  echo "  [7] iOS platform                      $(platform_label "$DO_IOS")"
+  echo "  [8] Android platform                  $(platform_label "$DO_ANDROID")"
   echo ""
-  echo "  [d] Defaults   (skip bundle + upload hint)"
+  echo "  [d] Defaults   (skip bundle + upload; both platforms)"
   echo "  [f] Full       (all steps ON)"
   echo "  [Enter] Start"
   echo "  [q] Quit"
@@ -72,6 +77,8 @@ apply_defaults() {
   SKIP_FW=0
   SKIP_INTEGRATE=0
   NO_OPEN=0
+  DO_IOS=1
+  DO_ANDROID=1
 }
 
 apply_full() {
@@ -81,6 +88,8 @@ apply_full() {
   SKIP_FW=0
   SKIP_INTEGRATE=0
   NO_OPEN=0
+  DO_IOS=1
+  DO_ANDROID=1
 }
 
 flip01() {
@@ -90,36 +99,30 @@ flip01() {
 prompt_interactive_flags() {
   apply_defaults
   echo "=============================================="
-  echo " Avento iOS UaaL rebuild — interactive"
-  echo " Default: skip AssetBundle + skip upload hint"
+  echo " Avento UaaL rebuild — interactive"
+  echo " Default: skip bundle + upload; iOS + Android"
   echo "=============================================="
 
   while true; do
     print_plan
     printf "> "
-    # Empty Enter = start
     if ! IFS= read -r choice; then
       break
     fi
     case "$choice" in
-      ""|s|S|start|START)
-        break
-        ;;
+      ""|s|S|start|START) break ;;
       1) SKIP_BUNDLE=$(flip01 "$SKIP_BUNDLE") ;;
       2) SKIP_UPLOAD_HINT=$(flip01 "$SKIP_UPLOAD_HINT") ;;
       3) SKIP_EXPORT=$(flip01 "$SKIP_EXPORT") ;;
       4) SKIP_FW=$(flip01 "$SKIP_FW") ;;
       5) SKIP_INTEGRATE=$(flip01 "$SKIP_INTEGRATE") ;;
       6) NO_OPEN=$(flip01 "$NO_OPEN") ;;
+      7) DO_IOS=$(flip01 "$DO_IOS") ;;
+      8) DO_ANDROID=$(flip01 "$DO_ANDROID") ;;
       d|D) apply_defaults ;;
       f|F) apply_full ;;
-      q|Q)
-        echo "Aborted."
-        exit 0
-        ;;
-      *)
-        echo "Unknown: $choice"
-        ;;
+      q|Q) echo "Aborted."; exit 0 ;;
+      *) echo "Unknown: $choice" ;;
     esac
   done
 }
@@ -127,15 +130,14 @@ prompt_interactive_flags() {
 WANT_INTERACTIVE=0
 ARGS_GIVEN=0
 
-# Collect args first so bare run keeps day-to-day UaaL defaults.
 for arg in "$@"; do
   case "$arg" in
     -i|--interactive) WANT_INTERACTIVE=1 ;;
     -h|--help)
-      sed -n '2,30p' "$0"
+      sed -n '2,28p' "$0"
       exit 0
       ;;
-    --skip-bundle|--skip-export|--skip-upload-hint|--skip-framework|--skip-fw|--skip-integrate|--no-open|--full|--all|--defaults|--default)
+    --skip-bundle|--skip-export|--skip-upload-hint|--skip-framework|--skip-fw|--skip-integrate|--no-open|--full|--all|--defaults|--default|--ios-only|--android-only|--skip-ios|--skip-android)
       ARGS_GIVEN=1
       ;;
     *)
@@ -146,23 +148,21 @@ for arg in "$@"; do
 done
 
 if [[ "$WANT_INTERACTIVE" -eq 1 ]]; then
-  if [[ ! -t 0 ]]; then
-    die "--interactive requires a TTY"
-  fi
+  [[ -t 0 ]] || die "--interactive requires a TTY"
   prompt_interactive_flags
 elif [[ "$ARGS_GIVEN" -eq 0 ]]; then
-  # Bare ./scripts/rebuild-ios-uaal.sh → UaaL player rebuild only (export/fw/integrate).
   apply_defaults
-  echo "Using defaults: --skip-bundle --skip-upload-hint (UaaL player → avento-app)"
-  echo "Tip: add -i for an interactive step menu, or --full for all steps."
+  echo "Using defaults: --skip-bundle --skip-upload-hint (iOS + Android UaaL → avento-app)"
+  echo "Tip: --ios-only / --android-only / -i / --full"
 else
-  # Explicit CLI: start from "run everything", then apply skip/full/defaults flags.
   SKIP_BUNDLE=0
   SKIP_UPLOAD_HINT=0
   SKIP_EXPORT=0
   SKIP_FW=0
   SKIP_INTEGRATE=0
   NO_OPEN=0
+  DO_IOS=1
+  DO_ANDROID=1
   for arg in "$@"; do
     case "$arg" in
       -i|--interactive) ;;
@@ -174,31 +174,39 @@ else
       --no-open) NO_OPEN=1 ;;
       --full|--all) apply_full ;;
       --defaults|--default) apply_defaults ;;
+      --ios-only) DO_IOS=1; DO_ANDROID=0 ;;
+      --android-only) DO_IOS=0; DO_ANDROID=1 ;;
+      --skip-ios) DO_IOS=0 ;;
+      --skip-android) DO_ANDROID=0 ;;
     esac
   done
 fi
 
-mkdir -p "$LOG_DIR" "$(dirname "$OUT")"
+if [[ "$DO_IOS" -eq 0 && "$DO_ANDROID" -eq 0 ]]; then
+  die "Nothing to do: both iOS and Android disabled"
+fi
+
+mkdir -p "$LOG_DIR" "$(dirname "$OUT_IOS")" "$(dirname "$OUT_ANDROID")"
 
 need_unity() {
   [[ -x "$UNITY" ]] || die "Unity not found at $UNITY (set UNITY=...)"
 }
 
 run_unity() {
-  local method="$1"
-  local log="$2"
-  shift 2
+  local target="$1"
+  local method="$2"
+  local log="$3"
+  shift 3
   echo ""
-  echo "==> Unity -executeMethod $method"
+  echo "==> Unity -buildTarget $target -executeMethod $method"
   echo "    log: $log"
-  # Unity may return non-zero on some warnings; check log + artifacts after.
   set +e
   "$UNITY" \
     -batchmode \
     -nographics \
     -quit \
     -projectPath "$PROJECT" \
-    -buildTarget iOS \
+    -buildTarget "$target" \
     -logFile "$log" \
     -executeMethod "$method" \
     "$@"
@@ -212,188 +220,244 @@ run_unity() {
 }
 
 echo "=============================================="
-echo " Avento iOS UaaL rebuild"
+echo " Avento UaaL rebuild"
 echo "=============================================="
-echo "PROJECT:    $PROJECT"
-echo "UNITY:      $UNITY"
-echo "AVENTO_APP: $AVENTO_APP"
-echo "OUT:        $OUT"
-echo "Flags:      skip-bundle=$SKIP_BUNDLE skip-upload-hint=$SKIP_UPLOAD_HINT skip-export=$SKIP_EXPORT skip-fw=$SKIP_FW skip-integrate=$SKIP_INTEGRATE no-open=$NO_OPEN"
+echo "PROJECT:     $PROJECT"
+echo "UNITY:       $UNITY"
+echo "AVENTO_APP:  $AVENTO_APP"
+echo "OUT_IOS:     $OUT_IOS"
+echo "OUT_ANDROID: $OUT_ANDROID"
+echo "Platforms:   ios=$DO_IOS android=$DO_ANDROID"
+echo "Flags:       skip-bundle=$SKIP_BUNDLE skip-upload-hint=$SKIP_UPLOAD_HINT skip-export=$SKIP_EXPORT skip-fw=$SKIP_FW skip-integrate=$SKIP_INTEGRATE no-open=$NO_OPEN"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 1) AssetBundle (iOS)
+# 1) AssetBundles
 # ---------------------------------------------------------------------------
 if [[ "$SKIP_BUNDLE" -eq 0 ]]; then
   need_unity
-  run_unity \
-    "UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForIosBatch" \
-    "$LOG_DIR/placedcontent-ios-bundle.log"
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    run_unity iOS \
+      "UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForIosBatch" \
+      "$LOG_DIR/placedcontent-ios-bundle.log"
+  fi
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    run_unity Android \
+      "UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForAndroidBatch" \
+      "$LOG_DIR/placedcontent-android-bundle.log"
+  fi
 else
   echo "==> Skipping AssetBundle build (--skip-bundle)"
 fi
 
-NEED_BUNDLE=0
+NEED_BUNDLE_CHECK=0
 if [[ "$SKIP_BUNDLE" -eq 0 || "$SKIP_UPLOAD_HINT" -eq 0 ]]; then
-  NEED_BUNDLE=1
+  NEED_BUNDLE_CHECK=1
 fi
 
-if [[ "$NEED_BUNDLE" -eq 1 ]]; then
-  [[ -f "$BUNDLE_PATH" ]] || die "Missing $BUNDLE_PATH — build the iOS AssetBundle first (or use AR Test → Build AssetBundle from selected prefab)"
-  BUNDLE_SIZE=$(stat -f%z "$BUNDLE_PATH" 2>/dev/null || stat -c%s "$BUNDLE_PATH")
-  if (( BUNDLE_SIZE < MIN_BUNDLE_BYTES )); then
-    die "Bundle too small ($BUNDLE_SIZE bytes). Expected ~20MB placedcontent, not the iOS catalog file."
+check_bundle() {
+  local path="$1"
+  local label="$2"
+  [[ -f "$path" ]] || die "Missing $path — build the $label AssetBundle first"
+  local size
+  size=$(stat -f%z "$path" 2>/dev/null || stat -c%s "$path")
+  if (( size < MIN_BUNDLE_BYTES )); then
+    die "$label bundle too small ($size bytes). Expected real placedcontent, not the catalog file."
   fi
-  echo "==> AssetBundle OK: $BUNDLE_PATH ($(python3 -c "print(f'{$BUNDLE_SIZE/1024/1024:.1f} MB')"))"
+  echo "==> $label AssetBundle OK: $path ($(python3 -c "print(f'{$size/1024/1024:.1f} MB')"))"
+}
+
+if [[ "$NEED_BUNDLE_CHECK" -eq 1 ]]; then
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    check_bundle "$BUNDLE_IOS" "iOS"
+  fi
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    check_bundle "$BUNDLE_ANDROID" "Android"
+  fi
 else
-  BUNDLE_SIZE=0
-  if [[ -f "$BUNDLE_PATH" ]]; then
-    BUNDLE_SIZE=$(stat -f%z "$BUNDLE_PATH" 2>/dev/null || stat -c%s "$BUNDLE_PATH")
-    echo "==> AssetBundle present (not required this run): $BUNDLE_PATH"
-  else
-    echo "==> No placedcontent check (bundle + upload hint skipped)"
-  fi
+  [[ -f "$BUNDLE_IOS" ]] && echo "==> iOS AssetBundle present (not required): $BUNDLE_IOS"
+  [[ -f "$BUNDLE_ANDROID" ]] && echo "==> Android AssetBundle present (not required): $BUNDLE_ANDROID"
 fi
 
 # ---------------------------------------------------------------------------
-# 2) Upload hint (avento-web is manual unless you wire auth later)
+# 2) Upload hints
 # ---------------------------------------------------------------------------
 if [[ "$SKIP_UPLOAD_HINT" -eq 0 ]]; then
   echo ""
-  echo "==> Upload this file in avento-web:"
-  echo "    Admin → offer VR → Unity Scene → Upload iOS bundle"
-  echo "    File: $BUNDLE_PATH"
-  echo "    (~$(python3 -c "print(f'{$BUNDLE_SIZE/1024/1024:.0f}')") MB, no extension — use “All files” in the picker if needed)"
-  if command -v open >/dev/null 2>&1; then
-    open -R "$BUNDLE_PATH" || true
+  echo "==> Upload in avento-web → Unity Scene:"
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    echo "    iOS file:     $BUNDLE_IOS"
+    command -v open >/dev/null 2>&1 && open -R "$BUNDLE_IOS" || true
+  fi
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    echo "    Android file: $BUNDLE_ANDROID"
+    command -v open >/dev/null 2>&1 && open -R "$BUNDLE_ANDROID" || true
   fi
 else
   echo "==> Skipping upload hint (--skip-upload-hint)"
 fi
 
 # ---------------------------------------------------------------------------
-# 3) Export UaaL iOS Xcode project
+# 3) Export UaaL
 # ---------------------------------------------------------------------------
 if [[ "$SKIP_EXPORT" -eq 0 ]]; then
   need_unity
-  # Fresh export folder avoids stale append / mixed Data.
-  if [[ -d "$OUT" ]]; then
-    echo "==> Removing previous export: $OUT"
-    rm -rf "$OUT"
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    if [[ -d "$OUT_IOS" ]]; then
+      echo "==> Removing previous iOS export: $OUT_IOS"
+      rm -rf "$OUT_IOS"
+    fi
+    run_unity iOS \
+      "UnityEngine.XR.Templates.AR.Editor.AventoUaalIosExporter.ExportIosLibraryBatch" \
+      "$LOG_DIR/uaal-ios-export.log" \
+      "-aventoUaalOut=$OUT_IOS"
+    [[ -d "$OUT_IOS/Data" ]] || die "iOS export missing Data/ — see $LOG_DIR/uaal-ios-export.log"
+    [[ -f "$OUT_IOS/Data/boot.config" ]] || die "iOS export missing Data/boot.config"
+    echo "==> iOS UaaL export OK: $OUT_IOS"
   fi
-  run_unity \
-    "UnityEngine.XR.Templates.AR.Editor.AventoUaalIosExporter.ExportIosLibraryBatch" \
-    "$LOG_DIR/uaal-ios-export.log" \
-    "-aventoUaalOut=$OUT"
-  [[ -d "$OUT/Data" ]] || die "Export missing Data/ — see $LOG_DIR/uaal-ios-export.log"
-  [[ -f "$OUT/Data/boot.config" ]] || die "Export missing Data/boot.config"
-  echo "==> UaaL export OK: $OUT"
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    if [[ -d "$OUT_ANDROID" ]]; then
+      echo "==> Removing previous Android export: $OUT_ANDROID"
+      rm -rf "$OUT_ANDROID"
+    fi
+    run_unity Android \
+      "UnityEngine.XR.Templates.AR.Editor.AventoUaalAndroidExporter.ExportAndroidLibraryBatch" \
+      "$LOG_DIR/uaal-android-export.log" \
+      "-aventoUaalOut=$OUT_ANDROID"
+    if [[ ! -f "$OUT_ANDROID/unityLibrary/build.gradle" ]]; then
+      # Some Unity versions nest the project one level deeper
+      found="$(find "$OUT_ANDROID" -type f -path '*/unityLibrary/build.gradle' 2>/dev/null | head -n 1 || true)"
+      [[ -n "$found" ]] || die "Android export missing unityLibrary/ — see $LOG_DIR/uaal-android-export.log"
+    fi
+    echo "==> Android UaaL export OK: $OUT_ANDROID"
+  fi
 else
   echo "==> Skipping UaaL export (--skip-export)"
-  [[ -d "$OUT/Data" ]] || die "No export at $OUT (run without --skip-export)"
+  if [[ "$DO_IOS" -eq 1 && ( "$SKIP_FW" -eq 0 || "$SKIP_INTEGRATE" -eq 0 ) ]]; then
+    [[ -d "$OUT_IOS/Data" ]] || die "No iOS export at $OUT_IOS (run without --skip-export)"
+  fi
+  if [[ "$DO_ANDROID" -eq 1 && "$SKIP_INTEGRATE" -eq 0 ]]; then
+    [[ -f "$OUT_ANDROID/unityLibrary/build.gradle" ]] || \
+      find "$OUT_ANDROID" -type f -path '*/unityLibrary/build.gradle' 2>/dev/null | grep -q . || \
+      die "No Android export at $OUT_ANDROID (run without --skip-export)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
-# 4) Build UnityFramework (device)
+# 4) Build UnityFramework (iOS only)
 # ---------------------------------------------------------------------------
-if [[ "$SKIP_FW" -eq 0 ]]; then
-  XCODEPROJ="$OUT/Unity-iPhone.xcodeproj"
-  [[ -d "$XCODEPROJ" ]] || die "Missing $XCODEPROJ"
+if [[ "$DO_IOS" -eq 1 ]]; then
+  if [[ "$SKIP_FW" -eq 0 ]]; then
+    XCODEPROJ="$OUT_IOS/Unity-iPhone.xcodeproj"
+    [[ -d "$XCODEPROJ" ]] || die "Missing $XCODEPROJ"
 
-  FW_LOG="$LOG_DIR/unityframework-ios.log"
-  DEST="${IOS_DESTINATION:-generic/platform=iOS}"
-  echo ""
-  echo "==> xcodebuild UnityFramework ($DEST)"
-  echo "    log: $FW_LOG"
+    FW_LOG="$LOG_DIR/unityframework-ios.log"
+    DEST="${IOS_DESTINATION:-generic/platform=iOS}"
+    echo ""
+    echo "==> xcodebuild UnityFramework ($DEST)"
+    echo "    log: $FW_LOG"
 
-  # Prefer UnityFramework scheme; fall back to building the framework target.
-  set +e
-  xcodebuild \
-    -project "$XCODEPROJ" \
-    -scheme UnityFramework \
-    -configuration Release \
-    -destination "$DEST" \
-    -derivedDataPath "$OUT/DerivedData" \
-    build \
-    CODE_SIGNING_ALLOWED=NO \
-    CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" \
-    >"$FW_LOG" 2>&1
-  XC_RC=$?
-  set -e
-
-  if [[ $XC_RC -ne 0 ]]; then
-    echo "WARNING: UnityFramework scheme build failed (rc=$XC_RC). Tail of log:"
-    tail -n 50 "$FW_LOG" || true
-    echo "Trying ReleaseForRunning + UnityFramework target…"
     set +e
     xcodebuild \
       -project "$XCODEPROJ" \
-      -target UnityFramework \
-      -configuration ReleaseForRunning \
+      -scheme UnityFramework \
+      -configuration Release \
       -destination "$DEST" \
-      -derivedDataPath "$OUT/DerivedData" \
+      -derivedDataPath "$OUT_IOS/DerivedData" \
       build \
       CODE_SIGNING_ALLOWED=NO \
       CODE_SIGNING_REQUIRED=NO \
       CODE_SIGN_IDENTITY="" \
-      >>"$FW_LOG" 2>&1
+      >"$FW_LOG" 2>&1
     XC_RC=$?
     set -e
+
+    if [[ $XC_RC -ne 0 ]]; then
+      echo "WARNING: UnityFramework scheme build failed (rc=$XC_RC). Tail of log:"
+      tail -n 50 "$FW_LOG" || true
+      echo "Trying ReleaseForRunning + UnityFramework target…"
+      set +e
+      xcodebuild \
+        -project "$XCODEPROJ" \
+        -target UnityFramework \
+        -configuration ReleaseForRunning \
+        -destination "$DEST" \
+        -derivedDataPath "$OUT_IOS/DerivedData" \
+        build \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGN_IDENTITY="" \
+        >>"$FW_LOG" 2>&1
+      XC_RC=$?
+      set -e
+    fi
+
+    FW_BUILT="$(find "$OUT_IOS/DerivedData/Build/Products" -type d -name 'UnityFramework.framework' 2>/dev/null | head -n 1 || true)"
+    if [[ -z "$FW_BUILT" ]]; then
+      FW_BUILT="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path "*Unity-iPhone*" -type d -name 'UnityFramework.framework' 2>/dev/null \
+        | while read -r d; do echo "$(stat -f '%m' "$d/UnityFramework" 2>/dev/null || echo 0) $d"; done \
+        | sort -rn | head -n 1 | awk '{ $1=""; sub(/^ /,""); print }' || true)"
+    fi
+
+    [[ -n "$FW_BUILT" && -d "$FW_BUILT" ]] || die "UnityFramework.framework not found after xcodebuild. See $FW_LOG"
+
+    STAGE="$OUT_IOS/build/Release-iphoneos"
+    mkdir -p "$STAGE"
+    rm -rf "$STAGE/UnityFramework.framework"
+    cp -R "$FW_BUILT" "$STAGE/UnityFramework.framework"
+    echo "==> Staged framework: $STAGE/UnityFramework.framework"
+    stat -f '%Sm %z %N' "$STAGE/UnityFramework.framework/UnityFramework"
+  else
+    echo "==> Skipping UnityFramework build (--skip-fw)"
   fi
-
-  FW_BUILT="$(find "$OUT/DerivedData/Build/Products" -type d -name 'UnityFramework.framework' 2>/dev/null | head -n 1 || true)"
-  if [[ -z "$FW_BUILT" ]]; then
-    # Also accept frameworks built into system DerivedData from a prior manual Xcode build.
-    FW_BUILT="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path "*Unity-iPhone*" -type d -name 'UnityFramework.framework' 2>/dev/null \
-      | while read -r d; do echo "$(stat -f '%m' "$d/UnityFramework" 2>/dev/null || echo 0) $d"; done \
-      | sort -rn | head -n 1 | awk '{ $1=""; sub(/^ /,""); print }' || true)"
-  fi
-
-  [[ -n "$FW_BUILT" && -d "$FW_BUILT" ]] || die "UnityFramework.framework not found after xcodebuild. See $FW_LOG"
-
-  STAGE="$OUT/build/Release-iphoneos"
-  mkdir -p "$STAGE"
-  rm -rf "$STAGE/UnityFramework.framework"
-  cp -R "$FW_BUILT" "$STAGE/UnityFramework.framework"
-  echo "==> Staged framework: $STAGE/UnityFramework.framework"
-  stat -f '%Sm %z %N' "$STAGE/UnityFramework.framework/UnityFramework"
-else
-  echo "==> Skipping UnityFramework build (--skip-fw)"
 fi
 
 # ---------------------------------------------------------------------------
 # 5) Integrate into avento-app
 # ---------------------------------------------------------------------------
 if [[ "$SKIP_INTEGRATE" -eq 0 ]]; then
-  INTEGRATE="$AVENTO_APP/scripts/integrate-unity-ios.sh"
-  [[ -x "$INTEGRATE" ]] || die "Missing $INTEGRATE"
-  echo ""
-  echo "==> Integrating into avento-app"
-  "$INTEGRATE" "$OUT"
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    INTEGRATE_IOS="$AVENTO_APP/scripts/integrate-unity-ios.sh"
+    [[ -x "$INTEGRATE_IOS" ]] || die "Missing $INTEGRATE_IOS"
+    echo ""
+    echo "==> Integrating iOS UaaL into avento-app"
+    "$INTEGRATE_IOS" "$OUT_IOS"
+  fi
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    INTEGRATE_ANDROID="$AVENTO_APP/scripts/integrate-unity-android.sh"
+    [[ -x "$INTEGRATE_ANDROID" ]] || die "Missing $INTEGRATE_ANDROID"
+    echo ""
+    echo "==> Integrating Android UaaL into avento-app"
+    "$INTEGRATE_ANDROID" "$OUT_ANDROID"
+  fi
 else
   echo "==> Skipping integrate (--skip-integrate)"
 fi
 
 # ---------------------------------------------------------------------------
-# 6) Open Xcode
+# 6) Open IDEs
 # ---------------------------------------------------------------------------
 APP_XCODE="$AVENTO_APP/ios/App/App.xcodeproj"
+APP_ANDROID="$AVENTO_APP/android"
 echo ""
 echo "=============================================="
 echo " Done"
 echo "=============================================="
-echo "1. Content: build any prefab via AR Test → Build AssetBundle from selected prefab,"
-echo "   then upload in avento-web (set unityAssetName if not PlacedContent)."
-echo "2. In Xcode: Clean Build Folder → Run on iPhone."
-echo "3. Open Unity Scene → tap a plane."
+echo "Content: build prefabs via AR Test → Build AssetBundle (iOS/Android),"
+echo "         upload in avento-web (set unityAssetName if not PlacedContent)."
 echo ""
-echo "Default content bundle: $BUNDLE_PATH"
-echo "Export:  $OUT"
-echo "App:     $APP_XCODE"
+[[ "$DO_IOS" -eq 1 ]] && echo "iOS export:     $OUT_IOS"
+[[ "$DO_ANDROID" -eq 1 ]] && echo "Android export: $OUT_ANDROID"
+echo "App iOS:        $APP_XCODE"
+echo "App Android:    $APP_ANDROID"
+echo ""
+echo "Next: Xcode → device (iOS); Android Studio → ARCore device (Android)."
 
 if [[ "$NO_OPEN" -eq 0 ]]; then
-  if [[ -d "$APP_XCODE" ]] && command -v open >/dev/null 2>&1; then
+  if [[ "$DO_IOS" -eq 1 && -d "$APP_XCODE" ]] && command -v open >/dev/null 2>&1; then
     open "$APP_XCODE"
+  fi
+  if [[ "$DO_ANDROID" -eq 1 && -d "$APP_ANDROID" ]] && command -v open >/dev/null 2>&1; then
+    open -a "Android Studio" "$APP_ANDROID" 2>/dev/null || open "$APP_ANDROID" || true
   fi
 fi

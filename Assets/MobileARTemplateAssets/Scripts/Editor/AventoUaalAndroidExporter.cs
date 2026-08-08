@@ -11,30 +11,31 @@ using UnityEngine;
 namespace UnityEngine.XR.Templates.AR.Editor
 {
     /// <summary>
-    /// Prepares and exports Unity-as-a-Library iOS for Avento Capacitor.
+    /// Prepares and exports Unity-as-a-Library Android (Google Gradle project / unityLibrary)
+    /// for Avento Capacitor.
     /// </summary>
-    public static class AventoUaalIosExporter
+    public static class AventoUaalAndroidExporter
     {
-        public const string DefaultExportPath = "Builds/iOS_UaaL";
+        public const string DefaultExportPath = "Builds/Android_UaaL";
 
-        [MenuItem("AR Test/UaaL/Prepare iOS Player Settings")]
+        [MenuItem("AR Test/UaaL/Prepare Android Player Settings")]
         public static void PreparePlayerSettings()
         {
             ApplyPlayerSettings();
             EditorUtility.DisplayDialog(
-                "UaaL iOS settings",
-                "Applied IL2CPP + ARM64 + iOS 16.0.\n\n" +
-                "Next: AR Test → UaaL → Export iOS Library Project",
+                "UaaL Android settings",
+                "Applied IL2CPP + ARM64 + minSdk 26 + Export Project.\n\n" +
+                "Next: AR Test → UaaL → Export Android Library Project",
                 "OK");
         }
 
-        [MenuItem("AR Test/UaaL/Export iOS Library Project")]
-        public static void ExportIosLibrary()
+        [MenuItem("AR Test/UaaL/Export Android Library Project")]
+        public static void ExportAndroidLibrary()
         {
             var absOut = Path.GetFullPath(DefaultExportPath);
             var proceed = EditorUtility.DisplayDialog(
-                "Export Unity as a Library (iOS)",
-                "Export a fresh iOS Xcode project to:\n\n" + absOut +
+                "Export Unity as a Library (Android)",
+                "Export a fresh Android Gradle project to:\n\n" + absOut +
                 "\n\nExisting contents of that folder will be replaced.\n" +
                 "This can take several minutes — watch the Console.",
                 "Export",
@@ -49,9 +50,10 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 {
                     EditorUtility.RevealInFinder(absOut);
                     EditorUtility.DisplayDialog(
-                        "UaaL iOS export ready",
+                        "UaaL Android export ready",
                         "Exported to:\n" + absOut +
-                        "\n\nNext: open Unity-iPhone.xcodeproj, build UnityFramework, then run integrate-unity-ios.sh.",
+                        "\n\nNext:\n" +
+                        "cd avento-app && ./scripts/integrate-unity-android.sh " + absOut,
                         "OK");
                 }
             }
@@ -59,17 +61,17 @@ namespace UnityEngine.XR.Templates.AR.Editor
             {
                 Debug.LogException(ex);
                 EditorUtility.DisplayDialog(
-                    "UaaL export failed",
+                    "UaaL Android export failed",
                     ex.Message + "\n\nSee Console for details.",
                     "OK");
             }
         }
 
         /// <summary>
-        /// Batch/CI: -executeMethod UnityEngine.XR.Templates.AR.Editor.AventoUaalIosExporter.ExportIosLibraryBatch
+        /// Batch/CI: -executeMethod UnityEngine.XR.Templates.AR.Editor.AventoUaalAndroidExporter.ExportAndroidLibraryBatch
         /// Optional: -aventoUaalOut=/abs/path
         /// </summary>
-        public static void ExportIosLibraryBatch()
+        public static void ExportAndroidLibraryBatch()
         {
             var outPath = DefaultExportPath;
             foreach (var arg in Environment.GetCommandLineArgs())
@@ -93,11 +95,11 @@ namespace UnityEngine.XR.Templates.AR.Editor
             }
         }
 
-        [MenuItem("AR Test/UaaL/Show iOS Integration Checklist")]
+        [MenuItem("AR Test/UaaL/Show Android Integration Checklist")]
         public static void ShowChecklist()
         {
             var text = BuildChecklistMarkdown(DefaultExportPath);
-            var outPath = Path.Combine("Builds", "AVENTO_UAAL_IOS_CHECKLIST.md");
+            var outPath = Path.Combine("Builds", "AVENTO_UAAL_ANDROID_CHECKLIST.md");
             Directory.CreateDirectory("Builds");
             File.WriteAllText(outPath, text, Encoding.UTF8);
             EditorUtility.RevealInFinder(outPath);
@@ -106,21 +108,22 @@ namespace UnityEngine.XR.Templates.AR.Editor
 
         static void ApplyPlayerSettings()
         {
-            PlayerSettings.SetScriptingBackend(NamedBuildTarget.iOS, ScriptingImplementation.IL2CPP);
-            PlayerSettings.SetArchitecture(NamedBuildTarget.iOS, 1); // ARM64
-            PlayerSettings.iOS.targetOSVersionString = "16.0";
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+            PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+            PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
             PlayerSettings.stripEngineCode = true;
+            EditorUserBuildSettings.exportAsGoogleAndroidProject = true;
+            EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
+            EditorUserBuildSettings.buildAppBundle = false;
         }
 
         static bool ExportToPath(string path, bool interactive)
         {
             ApplyPlayerSettings();
 
-            // Fresh export — do NOT use AcceptExternalModificationsToPlayer (append).
-            // Append throws "The build cannot be appended" on empty/non-iOS folders.
             if (Directory.Exists(path))
             {
-                Debug.Log($"[Avento UaaL] Clearing previous export at {path}");
+                Debug.Log($"[Avento UaaL] Clearing previous Android export at {path}");
                 Directory.Delete(path, recursive: true);
             }
 
@@ -138,7 +141,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 var msg = "No enabled scenes in Build Settings.";
                 Debug.LogError("[Avento UaaL] " + msg);
                 if (interactive)
-                    EditorUtility.DisplayDialog("UaaL export", msg, "OK");
+                    EditorUtility.DisplayDialog("UaaL Android export", msg, "OK");
                 return false;
             }
 
@@ -146,30 +149,55 @@ namespace UnityEngine.XR.Templates.AR.Editor
             {
                 scenes = scenePaths.ToArray(),
                 locationPathName = path,
-                target = BuildTarget.iOS,
+                target = BuildTarget.Android,
                 options = BuildOptions.None,
             };
 
-            Debug.Log($"[Avento UaaL] Exporting iOS library to {path} …");
+            Debug.Log($"[Avento UaaL] Exporting Android library to {path} …");
             var report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result != BuildResult.Succeeded)
             {
                 var msg = $"Build result: {report.summary.result}";
                 Debug.LogError("[Avento UaaL] " + msg);
                 if (interactive)
-                    EditorUtility.DisplayDialog("UaaL export failed", msg + "\n\nSee Console.", "OK");
+                    EditorUtility.DisplayDialog("UaaL Android export failed", msg + "\n\nSee Console.", "OK");
+                return false;
+            }
+
+            var unityLib = FindUnityLibraryDir(path);
+            if (string.IsNullOrEmpty(unityLib))
+            {
+                var msg = "Export finished but unityLibrary/ was not found under " + path;
+                Debug.LogError("[Avento UaaL] " + msg);
+                if (interactive)
+                    EditorUtility.DisplayDialog("UaaL Android export", msg, "OK");
                 return false;
             }
 
             WriteChecklistBesideExport(path);
-            Debug.Log($"[Avento UaaL] Export succeeded: {path}");
+            Debug.Log($"[Avento UaaL] Android export succeeded: {path}\nunityLibrary: {unityLib}");
             return true;
+        }
+
+        static string FindUnityLibraryDir(string exportRoot)
+        {
+            var direct = Path.Combine(exportRoot, "unityLibrary");
+            if (Directory.Exists(direct) && File.Exists(Path.Combine(direct, "build.gradle")))
+                return direct;
+
+            foreach (var dir in Directory.GetDirectories(exportRoot, "unityLibrary", SearchOption.AllDirectories))
+            {
+                if (File.Exists(Path.Combine(dir, "build.gradle")))
+                    return dir;
+            }
+
+            return null;
         }
 
         static void WriteChecklistBesideExport(string exportPath)
         {
             File.WriteAllText(
-                Path.Combine(exportPath, "AVENTO_UAAL_IOS_CHECKLIST.md"),
+                Path.Combine(exportPath, "AVENTO_UAAL_ANDROID_CHECKLIST.md"),
                 BuildChecklistMarkdown(exportPath),
                 Encoding.UTF8);
         }
@@ -177,14 +205,19 @@ namespace UnityEngine.XR.Templates.AR.Editor
         static string BuildChecklistMarkdown(string exportPath)
         {
             return
-                "# Avento — Unity as a Library (iOS) checklist\n\n" +
+                "# Avento — Unity as a Library (Android) checklist\n\n" +
                 $"Export path: `{exportPath}`\n\n" +
                 "## Integrate into avento-app\n\n" +
                 "```bash\n" +
                 "cd /path/to/avento-app\n" +
-                "./scripts/integrate-unity-ios.sh /path/to/avento-ar/Builds/iOS_UaaL\n" +
+                "./scripts/integrate-unity-android.sh /path/to/avento-ar/Builds/Android_UaaL\n" +
                 "```\n\n" +
-                "Then open Xcode, build, and confirm `isAvailable.unityEmbedded === true`.\n";
+                "Or rebuild both platforms from avento-ar:\n\n" +
+                "```bash\n" +
+                "./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint\n" +
+                "```\n\n" +
+                "Then Android Studio → Run on an ARCore device.\n" +
+                "Confirm `isAvailable.unityEmbedded === true`.\n";
         }
     }
 }
