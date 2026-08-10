@@ -52,6 +52,10 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         float m_ContentScale = 1f;
 
+        [Tooltip("Yaw offset in degrees (from offer Heading). Applied on top of camera-forward alignment.")]
+        [SerializeField]
+        float m_HeadingDegrees;
+
         [Tooltip("If enabled, each new tap removes previous placements.")]
         [SerializeField]
         bool m_ReplaceExistingPlacement = true;
@@ -62,7 +66,7 @@ namespace UnityEngine.XR.Templates.AR
 
         [Tooltip("Show on-screen tap/plane status (helps debug device builds).")]
         [SerializeField]
-        bool m_ShowDebugHud = true;
+        bool m_ShowDebugHud = false;
 
         readonly List<Placement> m_Placements = new();
         bool m_Ready;
@@ -73,6 +77,14 @@ namespace UnityEngine.XR.Templates.AR
         bool m_HasQueuedTap;
         Vector2 m_QueuedTap;
         string m_LastInputSource = "-";
+
+        /// <summary>
+        /// When true, place once on the first horizontal plane ~N meters in front of the camera (no tap).
+        /// </summary>
+        bool m_AutomaticScenePlacement;
+        float m_AutoPlaceDistanceMeters = 2f;
+        bool m_AutoPlaceDone;
+        bool m_AutoPlaceInFlight;
 
         struct Placement
         {
@@ -90,6 +102,13 @@ namespace UnityEngine.XR.Templates.AR
         {
             get => m_ContentScale;
             set => m_ContentScale = value;
+        }
+
+        /// <summary>Offer heading (°) — yaw offset after aligning content to camera forward.</summary>
+        public float contentHeadingDegrees
+        {
+            get => m_HeadingDegrees;
+            set => m_HeadingDegrees = value;
         }
 
         public int PlacementCount => m_Placements.Count;
@@ -137,6 +156,22 @@ namespace UnityEngine.XR.Templates.AR
                 Debug.Log($"[TapPlace] Ready (host). Prefab='{m_ContentPrefab.name}'.", this);
             else
                 Debug.LogWarning($"[TapPlace] {m_Status}", this);
+        }
+
+        /// <summary>
+        /// Enable/disable automatic placement: on first horizontal plane, put content
+        /// <paramref name="distanceMeters"/> in front of the phone on that surface (no tap).
+        /// </summary>
+        public void SetAutomaticScenePlacement(bool enabled, float distanceMeters = 2f)
+        {
+            m_AutomaticScenePlacement = enabled;
+            m_AutoPlaceDistanceMeters = distanceMeters > 0.1f ? distanceMeters : 2f;
+            m_AutoPlaceDone = false;
+            m_AutoPlaceInFlight = false;
+            m_Status = enabled
+                ? $"auto-place ON ({m_AutoPlaceDistanceMeters:0.##}m) — scan floor/table"
+                : "auto-place OFF — tap to place";
+            Debug.Log($"[TapPlace] AutomaticScenePlacement={enabled} distance={m_AutoPlaceDistanceMeters}", this);
         }
 
         void Awake()
@@ -202,12 +237,17 @@ namespace UnityEngine.XR.Templates.AR
                 return;
 
             var planes = m_PlaneManager != null ? m_PlaneManager.trackables.count : m_PlaneCount;
+            var autoHint = m_AutomaticScenePlacement
+                ? (m_AutoPlaceDone ? "auto placed" : $"auto {m_AutoPlaceDistanceMeters:0.#}m…")
+                : "tap a plane";
             var label =
                 $"[TapPlace] {m_Status}\n" +
                 $"ready={m_Ready} prefab={(m_ContentPrefab != null ? m_ContentPrefab.name : "null")}\n" +
                 $"planes={planes} taps={m_TapCount} placed={m_Placements.Count}\n" +
-                $"in={m_LastInputSource} fwd=v3\n" +
-                "Scan floor/table, then tap a plane.";
+                $"in={m_LastInputSource} {autoHint}\n" +
+                (m_AutomaticScenePlacement && !m_AutoPlaceDone
+                    ? "Scan floor/table — placing automatically."
+                    : "Scan floor/table, then tap a plane.");
 
             var style = new GUIStyle(GUI.skin.label)
             {
@@ -380,6 +420,9 @@ namespace UnityEngine.XR.Templates.AR
             if (m_PlaneManager != null)
                 m_PlaneCount = m_PlaneManager.trackables.count;
 
+            if (m_AutomaticScenePlacement && !m_AutoPlaceDone && !m_AutoPlaceInFlight)
+                TryAutomaticPlacement();
+
             if (!WasTapThisFrame(out var screenPosition))
                 return;
 
@@ -411,6 +454,122 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             TryPlaceAtScreenPosition(screenPosition);
+        }
+
+        void TryAutomaticPlacement()
+        {
+            if (!EnsureReadyForPlace())
+                return;
+
+            if (m_PlaneManager == null || m_PlaneManager.trackables.count == 0)
+            {
+                m_Status = "auto: waiting for horizontal plane…";
+                return;
+            }
+
+            var cam = Camera.main;
+            if (cam == null)
+            {
+                m_Status = "auto: no Camera.main";
+                return;
+            }
+
+            // 1) Screen-center ray — natural “in front of phone” hit on a detected plane.
+            var screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            if (m_RaycastManager.Raycast(screenCenter, s_Hits, k_PlaneHitMask) &&
+                IsHorizontalPlaneHit(s_Hits[0]))
+            {
+                m_LastInputSource = "auto-center";
+                m_Status = "auto: placing via screen-center hit";
+                PlaceAtHit(s_Hits[0], markAutoDone: true);
+                return;
+            }
+
+            // 2) Aim ~N meters ahead of the camera, then raycast down onto a horizontal plane.
+            var forward = cam.transform.forward;
+            var flat = Vector3.ProjectOnPlane(forward, Vector3.up);
+            if (flat.sqrMagnitude < 1e-4f)
+                flat = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.forward);
+            if (flat.sqrMagnitude < 1e-4f)
+                flat = Vector3.forward;
+            flat.Normalize();
+
+            var aim = cam.transform.position + flat * m_AutoPlaceDistanceMeters;
+            var from = aim + Vector3.up * 2.5f;
+            var screenFromWorld = cam.WorldToScreenPoint(from + Vector3.down * 0.1f);
+            // Prefer a downward AR ray via screen point above the aim (works with ARRaycastManager).
+            var probeScreen = new Vector2(screenFromWorld.x, screenFromWorld.y);
+            if (screenFromWorld.z > 0f &&
+                m_RaycastManager.Raycast(probeScreen, s_Hits, k_PlaneHitMask) &&
+                IsHorizontalPlaneHit(s_Hits[0]))
+            {
+                // Snap pose to aim XZ on the hit plane height so distance stays ~N meters.
+                var hitPose = s_Hits[0].pose;
+                var snapped = new Pose(
+                    new Vector3(aim.x, hitPose.position.y, aim.z),
+                    hitPose.rotation);
+                m_LastInputSource = "auto-forward";
+                m_Status = $"auto: placing {m_AutoPlaceDistanceMeters:0.##}m ahead";
+                PlaceAtPose(snapped, s_Hits[0].trackable as ARPlane, markAutoDone: true);
+                return;
+            }
+
+            // 3) Fallback: closest horizontal plane center projected toward aim.
+            ARPlane best = null;
+            var bestScore = float.MaxValue;
+            foreach (var plane in m_PlaneManager.trackables)
+            {
+                if (plane.alignment != PlaneAlignment.HorizontalUp &&
+                    plane.alignment != PlaneAlignment.HorizontalDown)
+                    continue;
+                var center = plane.center;
+                var dx = center.x - aim.x;
+                var dz = center.z - aim.z;
+                var score = dx * dx + dz * dz;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = plane;
+                }
+            }
+
+            if (best == null)
+            {
+                m_Status = "auto: waiting for horizontal plane…";
+                return;
+            }
+
+            var pose = new Pose(
+                new Vector3(aim.x, best.center.y, aim.z),
+                Quaternion.LookRotation(flat, Vector3.up));
+            m_LastInputSource = "auto-plane";
+            m_Status = $"auto: placing on plane {best.trackableId}";
+            PlaceAtPose(pose, best, markAutoDone: true);
+        }
+
+        static bool IsHorizontalPlaneHit(ARRaycastHit hit)
+        {
+            if (hit.trackable is ARPlane plane)
+            {
+                return plane.alignment == PlaneAlignment.HorizontalUp ||
+                       plane.alignment == PlaneAlignment.HorizontalDown;
+            }
+
+            // Estimated / feature hits: accept if normal is mostly up.
+            var up = hit.pose.up;
+            return Vector3.Dot(up, Vector3.up) > 0.7f;
+        }
+
+        bool EnsureReadyForPlace()
+        {
+            if (m_Ready)
+                return m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
+
+            ResolveManagers();
+            if (m_ContentPrefab == null)
+                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+            m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
+            return m_Ready;
         }
 
         bool WasTapThisFrame(out Vector2 screenPosition)
@@ -506,14 +665,12 @@ namespace UnityEngine.XR.Templates.AR
 
         async void TryPlaceAtScreenPosition(Vector2 screenPosition)
         {
-            if (m_RaycastManager == null || m_AnchorManager == null || m_ContentPrefab == null)
+            if (!EnsureReadyForPlace())
             {
                 m_Status = "missing managers/prefab on place";
                 Debug.LogError($"[TapPlace] {m_Status}", this);
                 return;
             }
-
-            m_Ready = true;
 
             if (!m_RaycastManager.Raycast(screenPosition, s_Hits, k_PlaneHitMask))
             {
@@ -523,26 +680,50 @@ namespace UnityEngine.XR.Templates.AR
                 return;
             }
 
-            var hit = s_Hits[0];
+            PlaceAtHit(s_Hits[0], markAutoDone: false);
+        }
+
+        void PlaceAtHit(ARRaycastHit hit, bool markAutoDone)
+        {
             m_Status = $"hit {hit.hitType} @ {hit.pose.position}";
             Debug.Log($"[TapPlace] Hit {hit.hitType} at {hit.pose.position}", this);
+            // Never use AR plane hit.rotation for content yaw — sim/device plane axes are
+            // arbitrary and often appear ~90° off. Position from hit; rotation from camera + heading.
+            var oriented = new Pose(hit.pose.position, ResolveContentRotation(hit.pose.position));
+            PlaceAtPose(oriented, hit.trackable as ARPlane, markAutoDone);
+        }
+
+        async void PlaceAtPose(Pose pose, ARPlane plane, bool markAutoDone)
+        {
+            if (!EnsureReadyForPlace())
+            {
+                m_Status = "missing managers/prefab on place";
+                return;
+            }
+
+            // Re-apply stable orientation even if caller passed a plane-derived pose.
+            pose = new Pose(pose.position, ResolveContentRotation(pose.position));
+
+            if (markAutoDone)
+                m_AutoPlaceInFlight = true;
 
             ARAnchor anchor = null;
 
-            if (hit.trackable is ARPlane plane)
+            if (plane != null)
             {
-                anchor = m_AnchorManager.AttachAnchor(plane, hit.pose);
+                anchor = m_AnchorManager.AttachAnchor(plane, pose);
                 if (anchor == null)
                     Debug.LogWarning("[TapPlace] AttachAnchor failed, trying TryAddAnchorAsync.");
             }
 
             if (anchor == null)
             {
-                var result = await m_AnchorManager.TryAddAnchorAsync(hit.pose);
+                var result = await m_AnchorManager.TryAddAnchorAsync(pose);
                 if (!result.status.IsSuccess())
                 {
                     m_Status = $"anchor failed: {result.status}";
                     Debug.LogError($"[TapPlace] TryAddAnchorAsync failed: {result.status}");
+                    m_AutoPlaceInFlight = false;
                     return;
                 }
 
@@ -552,6 +733,7 @@ namespace UnityEngine.XR.Templates.AR
             if (anchor == null)
             {
                 m_Status = "anchor null";
+                m_AutoPlaceInFlight = false;
                 return;
             }
 
@@ -559,11 +741,46 @@ namespace UnityEngine.XR.Templates.AR
                 ClearAllPlacements();
 
             var instance = PlaceContentOnAnchor(anchor);
-            m_Status = $"placed '{instance.name}' total={m_Placements.Count}";
+            if (markAutoDone)
+            {
+                m_AutoPlaceDone = true;
+                m_AutoPlaceInFlight = false;
+            }
+
+            m_Status = $"placed '{instance.name}' yaw={m_HeadingDegrees:0.#}° total={m_Placements.Count}";
             Debug.Log(
                 $"[TapPlace] OK — placed '{instance.name}' at {instance.transform.position} " +
-                $"(anchor {anchor.trackableId}, total={m_Placements.Count})",
+                $"rot={instance.transform.rotation.eulerAngles} heading={m_HeadingDegrees} " +
+                $"(anchor {anchor.trackableId}, total={m_Placements.Count}, auto={markAutoDone})",
                 this);
+        }
+
+        /// <summary>
+        /// Stable horizontal yaw for sim + device: align content +Z with camera forward on the
+        /// ground plane, then apply offer <see cref="m_HeadingDegrees"/>. Ignores AR plane axes
+        /// (those caused the ~90° skew in XR Simulation).
+        /// </summary>
+        Quaternion ResolveContentRotation(Vector3 worldPosition)
+        {
+            var flatForward = Vector3.forward;
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                flatForward = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+                if (flatForward.sqrMagnitude < 1e-4f)
+                {
+                    // Looking straight down/up — face toward camera instead.
+                    var toCam = cam.transform.position - worldPosition;
+                    toCam.y = 0f;
+                    flatForward = toCam.sqrMagnitude > 1e-4f ? toCam : Vector3.forward;
+                }
+            }
+
+            flatForward.Normalize();
+            var rot = Quaternion.LookRotation(flatForward, Vector3.up);
+            if (Mathf.Abs(m_HeadingDegrees) > 0.01f)
+                rot *= Quaternion.Euler(0f, m_HeadingDegrees, 0f);
+            return rot;
         }
 
         GameObject PlaceContentOnAnchor(ARAnchor anchor)
@@ -571,8 +788,10 @@ namespace UnityEngine.XR.Templates.AR
             var instance = Instantiate(m_ContentPrefab, anchor.transform);
             instance.name = $"{m_ContentPrefab.name}_{m_Placements.Count + 1}";
             instance.transform.localPosition = m_LocalPositionOffset;
-            instance.transform.localRotation = Quaternion.identity;
             instance.transform.localScale = Vector3.one * m_ContentScale;
+            // Force world yaw after parenting: AttachAnchor may still inherit plane axes
+            // (common ~90° skew in XR Simulation). Same rule on device and in Editor.
+            instance.transform.rotation = ResolveContentRotation(instance.transform.position);
             instance.SetActive(true);
 
             foreach (var t in instance.GetComponentsInChildren<Transform>(true))
@@ -596,6 +815,11 @@ namespace UnityEngine.XR.Templates.AR
                 images[i].Refresh();
             }
 
+            // Parent scale is applied before child Refresh; run one more fit pass next
+            // frame so video sprites pick up prepared width/height reliably.
+            if (videos.Length > 0)
+                StartCoroutine(RefreshVideosNextFrame(videos));
+
             m_Placements.Add(new Placement
             {
                 anchor = anchor,
@@ -603,6 +827,16 @@ namespace UnityEngine.XR.Templates.AR
             });
 
             return instance;
+        }
+
+        static IEnumerator RefreshVideosNextFrame(PlayVideoOnPlace[] videos)
+        {
+            yield return null;
+            for (var i = 0; i < videos.Length; i++)
+            {
+                if (videos[i] != null)
+                    videos[i].Refresh();
+            }
         }
 
         public void ClearAllPlacements()

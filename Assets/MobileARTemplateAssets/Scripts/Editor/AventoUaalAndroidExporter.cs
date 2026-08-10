@@ -112,6 +112,9 @@ namespace UnityEngine.XR.Templates.AR.Editor
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
             PlayerSettings.stripEngineCode = true;
+            // Skip Made with Unity splash when licensing allows (Plus/Pro / UaaL host).
+            PlayerSettings.SplashScreen.show = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
             EditorUserBuildSettings.exportAsGoogleAndroidProject = true;
             EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
             EditorUserBuildSettings.buildAppBundle = false;

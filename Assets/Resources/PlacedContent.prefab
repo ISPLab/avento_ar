@@ -215,6 +215,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &1674747380056588203
@@ -339,6 +340,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &2755810902801702660
@@ -463,6 +465,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &3050490470326388576
@@ -587,6 +590,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &3535198266738085770
@@ -711,6 +715,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &4156009224678202405
@@ -835,6 +840,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &4284500381777730923
@@ -959,6 +965,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &5160974171962768074
@@ -991,8 +998,8 @@ Transform:
   m_GameObject: {fileID: 5160974171962768074}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.672, z: 4.634}
-  m_LocalScale: {x: 0.8, y: 1.108035, z: 1}
+  m_LocalPosition: {x: 0, y: 0.672, z: 14.78}
+  m_LocalScale: {x: 1.8, y: 1.8, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7590097670566559689}
@@ -1071,7 +1078,7 @@ VideoPlayer:
   m_TargetMaterialRenderer: {fileID: 288220388644965475}
   m_TargetMaterialProperty: _BaseMap
   m_RenderMode: 3
-  m_AspectRatio: 2
+  m_AspectRatio: 3
   m_DataSource: 0
   m_TimeUpdateMode: 2
   m_PlaybackSpeed: 1
@@ -1106,6 +1113,14 @@ MonoBehaviour:
   m_TexturePropertyName: _BaseMap
   m_FlipVertical: 0
   m_FitQuadToAspect: 1
+  m_AspectFitMode: 1
+  m_RotateTowardCamera: 0
+  m_MoveTowardCamera: 1
+  m_ApproachSpeedMetersPerSecond: 0.35
+  m_StopDistanceMeters: 1.2
+  m_MoveOnlyWhilePlaying: 1
+  m_WalkBobAmplitudeMeters: 0.02
+  m_WalkBobFrequency: 2
 --- !u!114 &1614030985363331944
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1119,6 +1134,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &5727451918948065151
@@ -1243,6 +1259,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &7634642847259121194
@@ -1410,6 +1427,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1
 --- !u!1 &8363992321480491617
@@ -1534,5 +1552,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
   m_LockYAxis: 1
   m_FlipToFaceCamera: 1

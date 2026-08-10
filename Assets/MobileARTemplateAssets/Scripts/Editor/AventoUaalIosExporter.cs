@@ -110,6 +110,9 @@ namespace UnityEngine.XR.Templates.AR.Editor
             PlayerSettings.SetArchitecture(NamedBuildTarget.iOS, 1); // ARM64
             PlayerSettings.iOS.targetOSVersionString = "16.0";
             PlayerSettings.stripEngineCode = true;
+            // Skip Made with Unity splash when licensing allows (Plus/Pro / UaaL host).
+            PlayerSettings.SplashScreen.show = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
         }
 
         static bool ExportToPath(string path, bool interactive)

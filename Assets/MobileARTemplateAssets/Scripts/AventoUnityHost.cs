@@ -89,7 +89,8 @@ namespace UnityEngine.XR.Templates.AR
 
         /// <summary>
         /// Called from native via UnitySendMessage("AventoUnityHost", "OpenFromNative", json).
-        /// JSON: { "bundlePath", "assetName", "bundleFileName", "scale", "title" }
+        /// JSON: { "bundlePath", "assetName", "bundleFileName", "scale", "title",
+        ///         "heading", "automaticScenePlacement", "autoPlaceDistanceMeters" }
         /// </summary>
         [Preserve]
         public void OpenFromNative(string json)
@@ -254,7 +255,11 @@ namespace UnityEngine.XR.Templates.AR
                 m_TapToPlace.contentPrefab = prefab;
                 if (opts.scale > 0f)
                     m_TapToPlace.contentScale = opts.scale;
+                m_TapToPlace.contentHeadingDegrees = opts.heading;
                 m_TapToPlace.MarkReady();
+                m_TapToPlace.SetAutomaticScenePlacement(
+                    opts.automaticScenePlacement,
+                    opts.autoPlaceDistanceMeters > 0f ? opts.autoPlaceDistanceMeters : 2f);
             }
             else
             {
@@ -307,7 +312,9 @@ namespace UnityEngine.XR.Templates.AR
         {
             var payload =
                 "{\"ok\":true,\"contentReady\":true,\"assetName\":\"" + Escape(opts.assetName) +
-                "\",\"title\":\"" + Escape(opts.title) + "\"}";
+                "\",\"title\":\"" + Escape(opts.title) +
+                "\",\"automaticScenePlacement\":" + (opts.automaticScenePlacement ? "true" : "false") +
+                "}";
             AventoUnityNative.NotifyReady(payload);
         }
 
@@ -333,6 +340,9 @@ namespace UnityEngine.XR.Templates.AR
                 bundleFileName = "placedcontent",
                 scale = 1f,
                 title = "Unity AR",
+                heading = 0f,
+                automaticScenePlacement = false,
+                autoPlaceDistanceMeters = 2f,
             };
 
             if (string.IsNullOrWhiteSpace(json))
@@ -354,6 +364,10 @@ namespace UnityEngine.XR.Templates.AR
                         opts.title = dto.title;
                     if (dto.scale > 0f)
                         opts.scale = dto.scale;
+                    opts.heading = dto.heading;
+                    opts.automaticScenePlacement = dto.automaticScenePlacement;
+                    if (dto.autoPlaceDistanceMeters > 0f)
+                        opts.autoPlaceDistanceMeters = dto.autoPlaceDistanceMeters;
                     return opts;
                 }
             }
@@ -369,6 +383,12 @@ namespace UnityEngine.XR.Templates.AR
             var scale = ExtractJsonFloat(json, "scale");
             if (scale > 0f)
                 opts.scale = scale;
+            if (TryExtractJsonFloat(json, "heading", out var heading))
+                opts.heading = heading;
+            opts.automaticScenePlacement = ExtractJsonBool(json, "automaticScenePlacement");
+            var dist = ExtractJsonFloat(json, "autoPlaceDistanceMeters");
+            if (dist > 0f)
+                opts.autoPlaceDistanceMeters = dist;
             return opts;
         }
 
@@ -487,26 +507,50 @@ namespace UnityEngine.XR.Templates.AR
 
         static float ExtractJsonFloat(string json, string key)
         {
+            return TryExtractJsonFloat(json, key, out var value) ? value : -1f;
+        }
+
+        static bool TryExtractJsonFloat(string json, string key, out float value)
+        {
+            value = 0f;
             var token = "\"" + key + "\"";
             var idx = json.IndexOf(token, StringComparison.Ordinal);
             if (idx < 0)
-                return -1f;
+                return false;
             var colon = json.IndexOf(':', idx + token.Length);
             if (colon < 0)
-                return -1f;
+                return false;
             var end = colon + 1;
             while (end < json.Length && (char.IsWhiteSpace(json[end]) || json[end] == '"'))
                 end++;
             var start = end;
-            while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '.' || json[end] == '-'))
+            while (end < json.Length &&
+                   (char.IsDigit(json[end]) || json[end] == '.' || json[end] == '-' || json[end] == '+'))
                 end++;
-            if (float.TryParse(
-                    json.Substring(start, end - start),
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var value))
-                return value;
-            return -1f;
+            if (start == end)
+                return false;
+            return float.TryParse(
+                json.Substring(start, end - start),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out value);
+        }
+
+        static bool ExtractJsonBool(string json, string key)
+        {
+            var token = "\"" + key + "\"";
+            var idx = json.IndexOf(token, StringComparison.Ordinal);
+            if (idx < 0)
+                return false;
+            var colon = json.IndexOf(':', idx + token.Length);
+            if (colon < 0)
+                return false;
+            var slice = json.Substring(colon + 1).TrimStart();
+            if (slice.StartsWith("true", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (slice.StartsWith("1"))
+                return true;
+            return false;
         }
 
         [Serializable]
@@ -517,6 +561,9 @@ namespace UnityEngine.XR.Templates.AR
             public string bundleFileName;
             public string title;
             public float scale;
+            public float heading;
+            public bool automaticScenePlacement;
+            public float autoPlaceDistanceMeters;
         }
 
         struct OpenOptions
@@ -526,6 +573,9 @@ namespace UnityEngine.XR.Templates.AR
             public string bundleFileName;
             public string title;
             public float scale;
+            public float heading;
+            public bool automaticScenePlacement;
+            public float autoPlaceDistanceMeters;
         }
     }
 }

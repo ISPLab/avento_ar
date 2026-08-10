@@ -118,7 +118,8 @@ namespace UnityEngine.XR.Templates.AR
             var header = ReadBundleHeader(absolutePath);
             Debug.Log(
                 $"[PlacedContentBundle] Opening {absolutePath} size={info.Length} " +
-                $"magic={header.magic} unity={header.unityVersion}",
+                $"magic={header.magic} format={header.unityVersion} engine={header.engineRevision} " +
+                $"iosMetal={header.looksLikeIos}",
                 this);
 
             if (info.Length < MinBundleBytes)
@@ -329,10 +330,19 @@ namespace UnityEngine.XR.Templates.AR
 
             if (m_Bundle == null)
             {
+#if UNITY_IOS || UNITY_IPHONE
+                var platformHint = header.looksLikeIos
+                    ? "File looks like iOS (Metal) but still failed — rebuild UaaL + AssetBundle with the same Unity version."
+                    : "This file looks like Android placedcontent (no Metal). Re-upload AssetBundles/iOS/placedcontent to the iOS field (both files share the name placedcontent).";
+#else
+                var platformHint = header.looksLikeIos
+                    ? "This file looks like iOS placedcontent (Metal). Upload AssetBundles/Android/placedcontent to the Android field."
+                    : "Wrong platform or Unity version mismatch with the player.";
+#endif
                 NotifyFailed(
                     $"[PlacedContentBundle] LoadFromFile/Memory failed: {path} " +
-                    $"(magic={header.magic}, unity={header.unityVersion}). " +
-                    "Wrong platform (Android on iOS) or Unity version mismatch with the player.");
+                    $"(magic={header.magic}, format={header.unityVersion}, engine={header.engineRevision}). " +
+                    platformHint);
                 yield break;
             }
 
@@ -455,12 +465,22 @@ namespace UnityEngine.XR.Templates.AR
         struct BundleHeader
         {
             public string magic;
+            /// Format generation (often "5.x.x") — not the editor version.
             public string unityVersion;
+            /// Editor / player revision (e.g. "6000.5.6f1").
+            public string engineRevision;
+            public bool looksLikeIos;
         }
 
         static BundleHeader ReadBundleHeader(string path)
         {
-            var header = new BundleHeader { magic = "(unreadable)", unityVersion = "?" };
+            var header = new BundleHeader
+            {
+                magic = "(unreadable)",
+                unityVersion = "?",
+                engineRevision = "?",
+                looksLikeIos = false
+            };
             try
             {
                 using var fs = File.OpenRead(path);
@@ -473,7 +493,7 @@ namespace UnityEngine.XR.Templates.AR
                 }
 
                 header.magic = Encoding.ASCII.GetString(buf, 0, 7);
-                // UnityFS\0 + int32 version + null-terminated unity version string
+                // UnityFS\0 + int32 format + cstring formatVer + cstring engineRevision
                 if (n > 12 && header.magic == "UnityFS")
                 {
                     var verStart = 12;
@@ -482,6 +502,30 @@ namespace UnityEngine.XR.Templates.AR
                         verEnd++;
                     if (verEnd > verStart)
                         header.unityVersion = Encoding.ASCII.GetString(buf, verStart, verEnd - verStart);
+                    if (verEnd + 1 < n)
+                    {
+                        var revStart = verEnd + 1;
+                        var revEnd = revStart;
+                        while (revEnd < n && buf[revEnd] != 0)
+                            revEnd++;
+                        if (revEnd > revStart)
+                            header.engineRevision =
+                                Encoding.ASCII.GetString(buf, revStart, revEnd - revStart);
+                    }
+                }
+
+                // iOS PlacedContent embeds Metal shader source; Android builds do not.
+                try
+                {
+                    var marker = Encoding.ASCII.GetBytes("metal_stdlib");
+                    fs.Position = 0;
+                    var window = new byte[Math.Min(fs.Length, 4 * 1024 * 1024)];
+                    var read = fs.Read(window, 0, window.Length);
+                    header.looksLikeIos = IndexOfBytes(window, read, marker) >= 0;
+                }
+                catch
+                {
+                    // keep default
                 }
             }
             catch (Exception ex)
@@ -490,6 +534,29 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             return header;
+        }
+
+        static int IndexOfBytes(byte[] haystack, int hayLength, byte[] needle)
+        {
+            if (needle == null || needle.Length == 0 || hayLength < needle.Length)
+                return -1;
+            for (var i = 0; i <= hayLength - needle.Length; i++)
+            {
+                var match = true;
+                for (var j = 0; j < needle.Length; j++)
+                {
+                    if (haystack[i + j] != needle[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                    return i;
+            }
+
+            return -1;
         }
 
         void NotifyFailed(string message)
