@@ -8,31 +8,39 @@ namespace UnityEngine.XR.Templates.AR.Editor
 {
     /// <summary>
     /// Builds a self-contained AssetBundle (prefab + dependencies) for cloud / remote download.
-    /// Default menus pack <c>Assets/PlacedContent.prefab</c>; selected-prefab menus pack any prefab
+    /// Default menus pack <c>Assets/Resources/PlacedContent.prefab</c> (fallback:
+    /// <c>Assets/PlacedContent.prefab</c>); selected-prefab menus pack any prefab
     /// (bundle file name = lowercased prefab name).
     /// </summary>
     public static class PlacedContentBundleBuilder
     {
-        const string PrefabPath = "Assets/PlacedContent.prefab";
+        const string ResourcesPrefabPath = "Assets/Resources/PlacedContent.prefab";
+        const string RootPrefabPath = "Assets/PlacedContent.prefab";
         const string BundleName = "placedcontent";
         const string OutputRoot = "AssetBundles";
+
+        /// <summary>Prefer Resources copy (runtime fallback path), then root Assets/.</summary>
+        public static string DefaultPrefabPath =>
+            File.Exists(ResourcesPrefabPath) ? ResourcesPrefabPath :
+            File.Exists(RootPrefabPath) ? RootPrefabPath :
+            ResourcesPrefabPath;
 
         [MenuItem("AR Test/Build PlacedContent AssetBundle (active platform)")]
         public static void BuildForActivePlatform()
         {
-            Build(PrefabPath, BundleName, EditorUserBuildSettings.activeBuildTarget, interactive: true);
+            Build(DefaultPrefabPath, BundleName, EditorUserBuildSettings.activeBuildTarget, interactive: true);
         }
 
         [MenuItem("AR Test/Build PlacedContent AssetBundle (iOS)")]
         public static void BuildForIos()
         {
-            Build(PrefabPath, BundleName, BuildTarget.iOS, interactive: true);
+            Build(DefaultPrefabPath, BundleName, BuildTarget.iOS, interactive: true);
         }
 
         [MenuItem("AR Test/Build PlacedContent AssetBundle (Android)")]
         public static void BuildForAndroid()
         {
-            Build(PrefabPath, BundleName, BuildTarget.Android, interactive: true);
+            Build(DefaultPrefabPath, BundleName, BuildTarget.Android, interactive: true);
         }
 
         [MenuItem("AR Test/Build AssetBundle from selected prefab (active platform)")]
@@ -67,7 +75,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
         /// </summary>
         public static void BuildForIosBatch()
         {
-            var ok = Build(PrefabPath, BundleName, BuildTarget.iOS, interactive: false);
+            var ok = Build(DefaultPrefabPath, BundleName, BuildTarget.iOS, interactive: false);
             EditorApplication.Exit(ok ? 0 : 1);
         }
 
@@ -77,7 +85,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
         /// </summary>
         public static void BuildForAndroidBatch()
         {
-            var ok = Build(PrefabPath, BundleName, BuildTarget.Android, interactive: false);
+            var ok = Build(DefaultPrefabPath, BundleName, BuildTarget.Android, interactive: false);
             EditorApplication.Exit(ok ? 0 : 1);
         }
 

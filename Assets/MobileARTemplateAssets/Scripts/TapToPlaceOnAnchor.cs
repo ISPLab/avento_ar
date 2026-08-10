@@ -64,10 +64,6 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         bool m_ShowDebugHud = true;
 
-        [Tooltip("Spawn a bright debug cube with content so placement is visible even if video fails.")]
-        [SerializeField]
-        bool m_SpawnDebugMarker = true;
-
         readonly List<Placement> m_Placements = new();
         bool m_Ready;
         bool m_HostOwnsPrefab;
@@ -588,10 +584,17 @@ namespace UnityEngine.XR.Templates.AR
 
             var videos = instance.GetComponentsInChildren<PlayVideoOnPlace>(true);
             for (var i = 0; i < videos.Length; i++)
+            {
                 videos[i].enabled = true;
+                videos[i].Refresh();
+            }
 
-            if (m_SpawnDebugMarker)
-                SpawnDebugMarker(instance.transform);
+            var images = instance.GetComponentsInChildren<PlayImageOnPlace>(true);
+            for (var i = 0; i < images.Length; i++)
+            {
+                images[i].enabled = true;
+                images[i].Refresh();
+            }
 
             m_Placements.Add(new Placement
             {
@@ -600,34 +603,6 @@ namespace UnityEngine.XR.Templates.AR
             });
 
             return instance;
-        }
-
-        static void SpawnDebugMarker(Transform parent)
-        {
-            var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            marker.name = "DebugPlaceMarker";
-            marker.transform.SetParent(parent, false);
-            marker.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-            marker.transform.localScale = new Vector3(0.12f, 0.12f, 0.12f);
-            var renderer = marker.GetComponent<MeshRenderer>();
-            if (renderer != null)
-            {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                             ?? Shader.Find("Unlit/Color")
-                             ?? Shader.Find("Sprites/Default");
-                if (shader != null)
-                {
-                    renderer.material = new Material(shader);
-                    if (renderer.material.HasProperty("_BaseColor"))
-                        renderer.material.SetColor("_BaseColor", Color.magenta);
-                    else if (renderer.material.HasProperty("_Color"))
-                        renderer.material.color = Color.magenta;
-                }
-            }
-
-            var col = marker.GetComponent<Collider>();
-            if (col != null)
-                Destroy(col);
         }
 
         public void ClearAllPlacements()

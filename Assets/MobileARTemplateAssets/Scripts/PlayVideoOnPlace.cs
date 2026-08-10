@@ -7,6 +7,7 @@ namespace UnityEngine.XR.Templates.AR
     /// Plays a looping alpha video on a transparent billboard.
     /// Uses RenderTexture in the Editor/XR Simulation (more reliable) and
     /// MaterialOverride on device.
+    /// Optionally resizes the quad to the video aspect so the clip fits without stretch distortion.
     /// </summary>
     [RequireComponent(typeof(VideoPlayer))]
     [RequireComponent(typeof(MeshRenderer))]
@@ -21,11 +22,16 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         bool m_FlipVertical;
 
+        [Tooltip("Resize this object's X/Y scale to the video aspect (keeps the larger axis). Applies to every Video Sprite using this component.")]
+        [SerializeField]
+        bool m_FitQuadToAspect = true;
+
         VideoPlayer m_VideoPlayer;
         MeshRenderer m_Renderer;
         RenderTexture m_RenderTexture;
         bool m_Configured;
         bool m_PlayWhenReady;
+        Vector3 m_BaseLocalScale;
 
         static bool UseRenderTexturePath =>
             Application.isEditor || Application.platform == RuntimePlatform.OSXPlayer;
@@ -34,6 +40,7 @@ namespace UnityEngine.XR.Templates.AR
         {
             m_VideoPlayer = GetComponent<VideoPlayer>();
             m_Renderer = GetComponent<MeshRenderer>();
+            m_BaseLocalScale = transform.localScale;
             ConfigurePlayer();
         }
 
@@ -81,6 +88,23 @@ namespace UnityEngine.XR.Templates.AR
             }
         }
 
+        /// <summary>Re-fit / reconfigure after Instantiate or clip change.</summary>
+        public void Refresh()
+        {
+            m_Configured = false;
+            if (m_BaseLocalScale == Vector3.zero)
+                m_BaseLocalScale = transform.localScale;
+            ConfigurePlayer();
+            if (isActiveAndEnabled && m_VideoPlayer != null)
+            {
+                m_PlayWhenReady = true;
+                if (m_VideoPlayer.isPrepared)
+                    StartPlayback();
+                else
+                    m_VideoPlayer.Prepare();
+            }
+        }
+
         void ConfigurePlayer()
         {
             if (m_Configured)
@@ -101,7 +125,12 @@ namespace UnityEngine.XR.Templates.AR
             m_VideoPlayer.skipOnDrop = true;
             m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.None;
             m_VideoPlayer.clip = m_VideoClip;
+            // Texture fills the fitted quad; we change transform scale instead of letterboxing.
             m_VideoPlayer.aspectRatio = VideoAspectRatio.Stretch;
+
+            FitQuadToVideoAspect(
+                (int)m_VideoClip.width,
+                (int)m_VideoClip.height);
 
             if (UseRenderTexturePath)
             {
@@ -126,8 +155,30 @@ namespace UnityEngine.XR.Templates.AR
 
             Debug.Log(
                 $"[VideoSprite] configured clip='{m_VideoClip.name}' " +
-                $"{m_VideoClip.width}x{m_VideoClip.height}",
+                $"{m_VideoClip.width}x{m_VideoClip.height} fit={m_FitQuadToAspect}",
                 this);
+        }
+
+        void FitQuadToVideoAspect(int width, int height)
+        {
+            if (!m_FitQuadToAspect || width <= 0 || height <= 0)
+                return;
+
+            if (m_BaseLocalScale == Vector3.zero)
+                m_BaseLocalScale = transform.localScale;
+
+            var videoAspect = (float)width / height;
+            var baseAspect = Mathf.Abs(m_BaseLocalScale.y) > 0.0001f
+                ? Mathf.Abs(m_BaseLocalScale.x / m_BaseLocalScale.y)
+                : 1f;
+
+            var scale = m_BaseLocalScale;
+            if (videoAspect >= baseAspect)
+                scale.y = scale.x / videoAspect;
+            else
+                scale.x = scale.y * videoAspect;
+
+            transform.localScale = scale;
         }
 
         void EnsureRenderTexture()
@@ -195,7 +246,12 @@ namespace UnityEngine.XR.Templates.AR
 
         void OnPrepareCompleted(VideoPlayer source)
         {
-            Debug.Log($"[VideoSprite] prepared {source.width}x{source.height}", this);
+            var w = (int)source.width;
+            var h = (int)source.height;
+            if (w > 0 && h > 0)
+                FitQuadToVideoAspect(w, h);
+
+            Debug.Log($"[VideoSprite] prepared {w}x{h}", this);
             if (m_PlayWhenReady && isActiveAndEnabled)
                 StartPlayback();
         }

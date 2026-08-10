@@ -949,7 +949,7 @@ PlayerSettings:
   cloudProjectId: 15d1f491-a153-46b8-bc86-c06247909bd7
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: avento-ar
+  projectName: AR_TEST
   organizationId: andreusimus
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0

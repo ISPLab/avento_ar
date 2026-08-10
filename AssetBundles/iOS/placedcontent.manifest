@@ -1,16 +1,16 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.5.6f1
-CRC: 82561850
+CRC: 784118874
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: a3ac3c7490775e72b320ca7964435d57
+    Hash: c3a08f2fb08d4db70de3d696943bd83e
   TypeTreeHash:
     serializedVersion: 2
-    Hash: 5f0d2fdc080e54b5b4b5ce88db8523c2
+    Hash: 4063aa1f013087de43d2ea006bff2978
   IncrementalBuildHash:
     serializedVersion: 2
-    Hash: a40d1c5d18df9809d6be39848c96ca46
+    Hash: 4f10cd6c4fc36087a44b021af35e7a0f
 HashAppended: 0
 ClassTypes:
 - Class: 1
@@ -29,12 +29,10 @@ ClassTypes:
   Script: {instanceID: 0}
 - Class: 48
   Script: {instanceID: 0}
-- Class: 65
-  Script: {instanceID: 0}
-- Class: 114
-  Script: {fileID: 11500000, guid: 7075f90837664578a696494989917e34, type: 3}
 - Class: 114
   Script: {fileID: 11500000, guid: 7b08b6ad285a41cb8d1f83323925acb9, type: 3}
+- Class: 114
+  Script: {fileID: 11500000, guid: c8e4f1a29b7d4e6f9a0c1d2e3f4a5b6c, type: 3}
 - Class: 114
   Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
 - Class: 115
@@ -43,9 +41,7 @@ ClassTypes:
   Script: {instanceID: 0}
 - Class: 329
   Script: {instanceID: 0}
-SerializeReferenceClassIdentifiers:
-- AssemblyName: UnityEngine.CoreModule
-  ClassName: UnityEngine.Vector3
+SerializeReferenceClassIdentifiers: []
 Assets:
-- Assets/PlacedContent.prefab
+- Assets/Resources/PlacedContent.prefab
 Dependencies: []

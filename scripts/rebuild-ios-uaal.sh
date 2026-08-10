@@ -2,9 +2,10 @@
 # Avento UaaL rebuild — iOS and/or Android into avento-app.
 #
 # Bare run (default):
-#   --skip-bundle --skip-upload-hint
-#   rebuilds iOS (export → UnityFramework → integrate)
+#   build PlacedContent AssetBundles (iOS+Android)
+#   rebuild iOS (export → UnityFramework → integrate)
 #   AND Android (export Google project → integrate unityLibrary)
+#   (upload hint skipped)
 #
 # Usage:
 #   ./scripts/rebuild-ios-uaal.sh
@@ -24,16 +25,26 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT="${PROJECT:-$ROOT}"
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.5.6f1/Unity.app/Contents/MacOS/Unity}"
-AVENTO_APP="${AVENTO_APP:-/Users/andreyorlov/Projects/atlyx-project/avento-app}"
+# Prefer sibling avento-app next to this repo (survives folder moves); override with AVENTO_APP=.
+if [[ -z "${AVENTO_APP:-}" ]]; then
+  if [[ -d "$PROJECT/../avento-app" ]]; then
+    AVENTO_APP="$(cd "$PROJECT/../avento-app" && pwd)"
+  else
+    AVENTO_APP="/Users/andreyorlov/Projects/atlyx-project/avento-app"
+  fi
+fi
 OUT_IOS="${OUT_IOS:-${OUT:-$PROJECT/Builds/iOS_UaaL}}"
 OUT_ANDROID="${OUT_ANDROID:-$PROJECT/Builds/Android_UaaL}"
 LOG_DIR="${LOG_DIR:-$PROJECT/Builds}"
 BUNDLE_IOS="$PROJECT/AssetBundles/iOS/placedcontent"
 BUNDLE_ANDROID="$PROJECT/AssetBundles/Android/placedcontent"
+RESOURCES_PREFAB="$PROJECT/Assets/Resources/PlacedContent.prefab"
+ROOT_PREFAB="$PROJECT/Assets/PlacedContent.prefab"
 MIN_BUNDLE_BYTES=$((64 * 1024))
+UNITY_LOCKFILE="$PROJECT/Temp/UnityLockfile"
 
-# Day-to-day defaults: refresh players, skip content packs.
-SKIP_BUNDLE=1
+# Day-to-day defaults: build content packs + refresh players (both platforms).
+SKIP_BUNDLE=0
 SKIP_UPLOAD_HINT=1
 SKIP_EXPORT=0
 SKIP_FW=0
@@ -43,6 +54,25 @@ DO_IOS=1
 DO_ANDROID=1
 
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+# Fail early if Editor/batchmode already owns this project (common after a move/reopen).
+ensure_unity_project_free() {
+  local unity_pids project_pids
+  unity_pids="$(pgrep -f 'Unity.app/Contents/MacOS/Unity' 2>/dev/null || true)"
+  project_pids="$(pgrep -f -- "-projectPath[= ]$PROJECT" 2>/dev/null || true)"
+
+  if [[ -n "$project_pids" ]]; then
+    die "Unity already running for this project (pids: $project_pids). Close the Editor / other batchmode, then re-run."
+  fi
+
+  if [[ -f "$UNITY_LOCKFILE" ]]; then
+    if [[ -n "$unity_pids" ]]; then
+      die "Unity lockfile present ($UNITY_LOCKFILE) while Editor is running. Close Unity on this project (or quit Editor), then re-run."
+    fi
+    echo "==> Removing stale Unity lockfile: $UNITY_LOCKFILE"
+    rm -f "$UNITY_LOCKFILE"
+  fi
+}
 
 flag_label() {
   if [[ "$1" -eq 0 ]]; then echo "ON "; else echo "off"; fi
@@ -64,14 +94,14 @@ print_plan() {
   echo "  [7] iOS platform                      $(platform_label "$DO_IOS")"
   echo "  [8] Android platform                  $(platform_label "$DO_ANDROID")"
   echo ""
-  echo "  [d] Defaults   (skip bundle + upload; both platforms)"
+  echo "  [d] Defaults   (build bundle + UaaL; skip upload; both platforms)"
   echo "  [f] Full       (all steps ON)"
   echo "  [Enter] Start"
   echo "  [q] Quit"
 }
 
 apply_defaults() {
-  SKIP_BUNDLE=1
+  SKIP_BUNDLE=0
   SKIP_UPLOAD_HINT=1
   SKIP_EXPORT=0
   SKIP_FW=0
@@ -100,7 +130,7 @@ prompt_interactive_flags() {
   apply_defaults
   echo "=============================================="
   echo " Avento UaaL rebuild — interactive"
-  echo " Default: skip bundle + upload; iOS + Android"
+  echo " Default: build bundles + UaaL; skip upload; iOS + Android"
   echo "=============================================="
 
   while true; do
@@ -152,8 +182,8 @@ if [[ "$WANT_INTERACTIVE" -eq 1 ]]; then
   prompt_interactive_flags
 elif [[ "$ARGS_GIVEN" -eq 0 ]]; then
   apply_defaults
-  echo "Using defaults: --skip-bundle --skip-upload-hint (iOS + Android UaaL → avento-app)"
-  echo "Tip: --ios-only / --android-only / -i / --full"
+  echo "Using defaults: build PlacedContent bundles + UaaL (iOS + Android) → avento-app"
+  echo "Tip: --skip-bundle / --ios-only / --android-only / -i / --full"
 else
   SKIP_BUNDLE=0
   SKIP_UPLOAD_HINT=0
@@ -190,6 +220,9 @@ mkdir -p "$LOG_DIR" "$(dirname "$OUT_IOS")" "$(dirname "$OUT_ANDROID")"
 
 need_unity() {
   [[ -x "$UNITY" ]] || die "Unity not found at $UNITY (set UNITY=...)"
+  [[ -d "$PROJECT/Assets" ]] || die "PROJECT looks wrong (no Assets/): $PROJECT"
+  [[ -d "$AVENTO_APP" ]] || die "AVENTO_APP not found: $AVENTO_APP (set AVENTO_APP=...)"
+  ensure_unity_project_free
 }
 
 run_unity() {
@@ -199,7 +232,9 @@ run_unity() {
   shift 3
   echo ""
   echo "==> Unity -buildTarget $target -executeMethod $method"
+  echo "    project: $PROJECT"
   echo "    log: $log"
+  ensure_unity_project_free
   set +e
   "$UNITY" \
     -batchmode \
@@ -213,10 +248,16 @@ run_unity() {
   local rc=$?
   set -e
   if [[ $rc -ne 0 ]]; then
-    echo "WARNING: Unity exited with code $rc — check $log"
+    echo "ERROR: Unity exited with code $rc — check $log" >&2
+    if grep -qi 'another Unity instance is running' "$log" 2>/dev/null; then
+      echo "HINT: Close Unity Editor (and Unity Hub project open on this folder), then re-run." >&2
+    fi
     tail -n 40 "$log" || true
+    exit "$rc"
   fi
-  return 0
+  if grep -qi 'another Unity instance is running' "$log" 2>/dev/null; then
+    die "Unity aborted: project already open in another instance — see $log"
+  fi
 }
 
 echo "=============================================="
@@ -236,6 +277,13 @@ echo ""
 # ---------------------------------------------------------------------------
 if [[ "$SKIP_BUNDLE" -eq 0 ]]; then
   need_unity
+  if [[ -f "$RESOURCES_PREFAB" ]]; then
+    echo "==> PlacedContent source: $RESOURCES_PREFAB (Resources — used by simulator + bundle)"
+  elif [[ -f "$ROOT_PREFAB" ]]; then
+    echo "==> PlacedContent source: $ROOT_PREFAB"
+  else
+    die "Missing PlacedContent prefab. Expected:\n  $RESOURCES_PREFAB\nor\n  $ROOT_PREFAB"
+  fi
   if [[ "$DO_IOS" -eq 1 ]]; then
     run_unity iOS \
       "UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForIosBatch" \
@@ -443,8 +491,8 @@ echo ""
 echo "=============================================="
 echo " Done"
 echo "=============================================="
-echo "Content: build prefabs via AR Test → Build AssetBundle (iOS/Android),"
-echo "         upload in avento-web (set unityAssetName if not PlacedContent)."
+echo "Content: packs Assets/Resources/PlacedContent.prefab → AssetBundles/<platform>/placedcontent"
+echo "         (simulator uses Resources.Load; device/UaaL prefers AssetBundle then Resources)."
 echo ""
 [[ "$DO_IOS" -eq 1 ]] && echo "iOS export:     $OUT_IOS"
 [[ "$DO_ANDROID" -eq 1 ]] && echo "Android export: $OUT_ANDROID"
@@ -452,6 +500,12 @@ echo "App iOS:        $APP_XCODE"
 echo "App Android:    $APP_ANDROID"
 echo ""
 echo "Next: Xcode → device (iOS); Android Studio → ARCore device (Android)."
+if [[ "$SKIP_BUNDLE" -eq 0 ]]; then
+  echo ""
+  echo "Upload bundles in avento-web if needed:"
+  [[ "$DO_IOS" -eq 1 ]] && echo "  iOS:     $BUNDLE_IOS"
+  [[ "$DO_ANDROID" -eq 1 ]] && echo "  Android: $BUNDLE_ANDROID"
+fi
 
 if [[ "$NO_OPEN" -eq 0 ]]; then
   if [[ "$DO_IOS" -eq 1 && -d "$APP_XCODE" ]] && command -v open >/dev/null 2>&1; then

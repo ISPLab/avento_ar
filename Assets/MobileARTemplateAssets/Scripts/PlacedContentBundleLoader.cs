@@ -373,6 +373,12 @@ namespace UnityEngine.XR.Templates.AR
                 var byPath = bundle.LoadAsset<GameObject>("Assets/" + assetName + ".prefab");
                 if (byPath != null)
                     return byPath;
+                byPath = bundle.LoadAsset<GameObject>("Assets/Resources/" + assetName + ".prefab");
+                if (byPath != null)
+                    return byPath;
+                byPath = bundle.LoadAsset<GameObject>("Assets/Resources/PlacedContent.prefab");
+                if (byPath != null)
+                    return byPath;
                 byPath = bundle.LoadAsset<GameObject>("Assets/PlacedContent.prefab");
                 if (byPath != null)
                     return byPath;
