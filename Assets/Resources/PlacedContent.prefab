@@ -1271,6 +1271,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7590097670566559689}
+  - component: {fileID: 9012345678901234567}
   m_Layer: 0
   m_Name: PlacedContent
   m_TagString: Untagged
@@ -1305,6 +1306,30 @@ Transform:
   - {fileID: 8707412806935836904}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &9012345678901234567
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7634642847259121194}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 239d7424add64c8195dd012307a968be, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.XR.Templates.AR::UnityEngine.XR.Templates.AR.PanoramaSkyboxViewer
+  m_PanoramaTexture: {fileID: 2800000, guid: dcab56e66f9ef4703b05b1b73fec0940, type: 3}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 8fd1552128be4c65be23ff1e13ec0f54, type: 2}
+  m_HideArCameraBackground: 1
+  m_HideSimulationEnvironment: 1
+  m_DisableTrackedPoseWhileActive: 1
+  m_DomeRadius: 0.75
+  m_LookSensitivity: 0.15
+  m_MinPitch: -89
+  m_MaxPitch: 89
+  m_LookTarget: {fileID: 0}
+  m_Exposure: 1
+  m_YawOffset: 0
 --- !u!1 &8123456789012345001
 GameObject:
   m_ObjectHideFlags: 0
