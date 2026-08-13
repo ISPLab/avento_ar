@@ -430,6 +430,17 @@ namespace UnityEngine.XR.Templates.AR
             AdjustARDebugMenuPosition();
         }
 
+        /// <summary>
+        /// Show or hide AR plane mesh visuals (scan-surface overlays).
+        /// </summary>
+        public void SetPlaneVisualizationVisible(bool visible)
+        {
+            m_VisualizePlanes = visible;
+            if (m_DebugPlaneSlider != null)
+                m_DebugPlaneSlider.value = visible ? 1 : 0;
+            ChangePlaneVisibility(visible);
+        }
+
         void ChangePlaneVisibility(bool setVisible)
         {
             foreach (var plane in m_ARPlanes)

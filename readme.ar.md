@@ -69,12 +69,15 @@ Do **not** mix platforms: an iOS bundle will not load on Android (and vice versa
 
 ### 3.2 Default content contract
 
-| Field | Default |
-|-------|---------|
-| Prefab | `Assets/PlacedContent.prefab` |
-| Asset name inside bundle | `PlacedContent` |
-| Bundle file name | `placedcontent` (no extension) |
-| Output | `AssetBundles/iOS/placedcontent` · `AssetBundles/Android/placedcontent` |
+| Field | Default / notes |
+|-------|-----------------|
+| Authoring prefab | `Assets/Resources/PlacedContent.prefab` (or any selected prefab) |
+| Local build output | `AssetBundles/iOS/<lowercased-prefab>` · `AssetBundles/Android/…` |
+| MinIO / admin URL | GUID key (e.g. `dfecb028-….bundle`) — **runtime identity** |
+| Device cache | `unity-<guid>.unity3d` (+ optional content revision) |
+| Asset name | Optional prefab root; blank → load first GameObject in the bundle |
+
+`unityBundleFileName` is deprecated and ignored for caching.
 
 ### 3.3 Author a scene / prefab
 
@@ -87,10 +90,10 @@ Do **not** mix platforms: an iOS bundle will not load on Android (and vice versa
 **Menus**
 
 - **AR Test → Build PlacedContent AssetBundle (iOS / Android / active platform)**  
-  Always packs `Assets/PlacedContent.prefab` → file `placedcontent`.
+  Packs the default PlacedContent prefab → local file `placedcontent`.
 - **AR Test → Build AssetBundle from selected prefab (iOS / Android / active)**  
-  Select a `.prefab` in Project → packs it; **file name = lowercased prefab name**.  
-  Dialog shows `unityAssetName` / `unityBundleFileName` for avento-web.
+  Select a `.prefab` in Project → packs it; **local file name = lowercased prefab name**.  
+  Dialog shows suggested optional `unityAssetName` (prefab name). After upload, MinIO GUID is what the app uses.
 
 **Batch (CI / script)**
 
@@ -104,7 +107,7 @@ UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForAndroidBat
 - Build **separately** for iOS and Android.
 - Upload the big UnityFS file (~tens of MB), **not** the tiny `AssetBundles/iOS/iOS` catalog (~KB).
 - Never upload an Android bundle into the iOS admin field (or reverse).
-
+- Local filename does **not** matter after upload — storage is a MinIO GUID.
 ### 3.5 Export Unity as a Library (player)
 
 **Menus**
@@ -155,7 +158,7 @@ cd /Users/andreyorlov/Projects/atlyx-project/avento-ar
 | `--skip-ios` / `--skip-android` | Disable one platform |
 | `-i` / `--interactive` | Toggle steps in a menu |
 | `--full` | Also build AssetBundles + upload hints |
-| `--skip-bundle` | Don’t build `placedcontent` |
+| `--skip-bundle` | Don’t build default AssetBundles |
 | `--skip-upload-hint` | Don’t reveal bundle in Finder |
 | `--skip-export` | Reuse existing `Builds/*_UaaL` |
 | `--skip-fw` | Skip iOS `xcodebuild` UnityFramework |
@@ -220,7 +223,7 @@ Then upload revealed bundles in admin, and run on devices.
 |------|------|
 | `src/lib/offerVr.ts` | Mode `unity_scene`, fields, sanitize, platform URL helpers |
 | `src/lib/vr-upload.ts` | `vrKind: 'unity_bundle'` (octet-stream / no extension, large size) |
-| `src/components/admin/sections/VrExperienceSection.tsx` | UI: iOS + Android uploads, asset name fields |
+| `src/components/admin/sections/VrExperienceSection.tsx` | UI: iOS + Android uploads, optional asset name |
 
 Stored in offer JSON: `sections_data.vr` (no DB migration). Version stays `OFFER_VR_VERSION = 1` (additive fields).
 
@@ -228,24 +231,22 @@ Stored in offer JSON: `sections_data.vr` (no DB migration). Version stays `OFFER
 
 ```ts
 mode: 'unity_scene'
-unityIosBundleUrl?: string      // HTTPS / storage ref
+unityIosBundleUrl?: string      // MinIO GUID / HTTPS
 unityAndroidBundleUrl?: string
-unityAssetName?: string         // default "PlacedContent"
-unityBundleFileName?: string    // default "placedcontent"
+unityAssetName?: string         // optional prefab root; blank → first GameObject
+// unityBundleFileName?: string // deprecated — ignored for device cache
 // plus shared VR fields: title, previewImageUrl, lat/lng, scale, …
 ```
 
 ### 5.3 Admin steps
 
 1. Edit offer → **VR Experience** → add item → mode **Unity Scene**.
-2. Upload **iOS AssetBundle** = `AssetBundles/iOS/…` file from Unity.
+2. Upload **iOS AssetBundle** = `AssetBundles/iOS/…` file from Unity (any local name → MinIO GUID).
 3. Upload **Android AssetBundle** = `AssetBundles/Android/…` file.
-4. If not default prefab: set **Asset name** = prefab name (e.g. `WalkingMan`).
-5. Optional: bundle file name for cache key (usually matches lowercased prefab).
-6. Save / publish.
+4. Optional: set **Asset name** = prefab root if the bundle has multiple roots; leave blank to auto-load the first prefab.
+5. Save / publish.
 
 Validation: at least one of iOS/Android URL must be present. Platform-specific open uses **only** that platform’s URL (no cross-fallback).
-
 ### 5.4 Upload API
 
 `POST /api/upload?purpose=vr&vrKind=unity_bundle` — accepts large binary / no extension.
@@ -267,7 +268,7 @@ Flow:
 
 1. User opens offer VR item with `mode === 'unity_scene'`.
 2. App resolves URL: iOS → `unityIosBundleUrl`, Android → `unityAndroidBundleUrl`.
-3. Calls `UnityArSession.openScene({ bundleUrl, assetName, bundleFileName, scale, title })`.
+3. Calls `UnityArSession.openScene({ bundleUrl, assetName?, scale, title, forceRedownload? })`.
 4. Listens for `unityArProgress` / `unityArSessionEnded` / `unityArError`.
 
 ### 6.2 Capacitor plugin contract
@@ -277,7 +278,7 @@ UnityArSession.isAvailable()
   → { available, unityEmbedded?, reason? }
 
 UnityArSession.openScene({
-  bundleUrl, assetName?, bundleFileName?, title?, scale?, …
+  bundleUrl, assetName?, title?, scale?, contentRevision?, forceRedownload?, …
 })
 
 UnityArSession.dismiss()
@@ -287,17 +288,19 @@ Events: `unityArProgress`, `unityArSessionEnded`, `unityArError` (+ Android may 
 
 ### 6.3 Native open JSON → Unity
 
-After download, native sends (same on both platforms):
+After download, native caches as `unity-<minio-guid>.unity3d` and sends (same on both platforms):
 
 ```json
 {
-  "bundlePath": "/…/Caches/unity-ar-bundles/placedcontent-<hash>.unity3d",
-  "assetName": "PlacedContent",
-  "bundleFileName": "placedcontent",
+  "bundlePath": "/…/Caches/unity-ar-bundles/unity-dfecb028-….unity3d",
+  "assetName": "",
+  "bundleFileName": "unity-dfecb028-….unity3d",
   "scale": 1.0,
   "title": "Offer title"
 }
 ```
+
+Empty `assetName` → Unity loads the first GameObject in the bundle.
 
 Via `UnitySendMessage("AventoUnityHost", "OpenFromNative", json)`.
 
@@ -394,6 +397,7 @@ Assets/MobileARTemplateAssets/Scripts/
   Editor/AventoUaalAndroidExporter.cs
 Assets/Plugins/iOS/AventoUnityNativeBridge.mm
 scripts/rebuild-ios-uaal.sh
+scripts/check-unity-ar-versions.sh
 AssetBundles/iOS|Android/<bundle>
 Builds/iOS_UaaL|Android_UaaL/
 ```
@@ -430,9 +434,25 @@ android/shared/                # gitignored, from integrate
 
 ## 9. Troubleshooting
 
+### 9.0 Version / identity check
+
+Device paths like `unity-dfecb028-….unity3d` (or legacy `placedcontent-<hash>.unity3d`) are the **admin download**, not your local `AssetBundles/iOS/<name>`. Cache identity is the **MinIO GUID** from the URL (+ optional content revision).
+
+```bash
+# Local bundle vs embedded UaaL in avento-app
+./scripts/check-unity-ar-versions.sh --sha256
+
+# Compare against the URL/file the phone actually loads
+./scripts/check-unity-ar-versions.sh --sha256 --url 'https://…/dfecb028-….bundle'
+./scripts/check-unity-ar-versions.sh --sha256 --bundle /path/to/downloaded.bundle
+```
+
+Unity menu: **AR Test → Check Unity AR versions (bundle vs UaaL)**.
+
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Bundle load fails, path OK | Wrong file (catalog / other platform) | Upload real `placedcontent` (~20MB+), matching OS |
+| Bundle load fails, path OK | Wrong file (catalog / other platform) | Upload real UnityFS content pack (~20MB+), matching OS |
+| iOS Metal UnityFS rejected, engines look equal | Stale admin URL/cache, or bundle not re-uploaded after rebuild | Re-upload iOS pack (new GUID URL), Try again (force redownload), or reinstall; run version-check script |
 | iOS crash in IL2CPP metadata | Data / Framework mismatch | Re-export + rebuild Framework + re-integrate **together** |
 | iOS: planes OK, taps=0 | UaaL Input System blind | Ensure touch catcher window path (`readme.notap.md`); rebuild player |
 | Android: placeholder only | No `ENABLE_EMBEDDED` / no unityLibrary | Run integrate / rebuild `--android-only` |
@@ -462,7 +482,7 @@ android/shared/                # gitignored, from integrate
 ```bash
 # Content (per offer)
 # Unity: AR Test → Build AssetBundle … (iOS) + (Android)
-# avento-web: Unity Scene → upload both → set unityAssetName if needed
+# avento-web: Unity Scene → upload both → optional Asset name if multi-root
 
 # Player (dev) — close Unity Editor first
 cd /Users/andreyorlov/Projects/atlyx-project/avento-ar

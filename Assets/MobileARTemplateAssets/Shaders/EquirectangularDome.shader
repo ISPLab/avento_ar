@@ -4,15 +4,18 @@ Shader "AR/EquirectangularDome"
     {
         [MainTexture] _BaseMap("Equirectangular Map", 2D) = "gray" {}
         [MainColor] _BaseColor("Tint", Color) = (1, 1, 1, 1)
+        _Opacity("Opacity", Range(0, 1)) = 0.5
         _RotationY("Yaw Rotation (deg)", Float) = 0
+        // 0 = Mono, 1 = Side-by-Side (left eye), 2 = Top-Bottom (top / left eye)
+        _StereoMode("Stereo Mode", Float) = 0
     }
 
     SubShader
     {
         Tags
         {
-            "RenderType" = "Opaque"
-            "Queue" = "Geometry-10"
+            "RenderType" = "Transparent"
+            "Queue" = "Background+10"
             "IgnoreProjector" = "True"
             "RenderPipeline" = "UniversalPipeline"
         }
@@ -22,10 +25,11 @@ Shader "AR/EquirectangularDome"
             Name "EquirectangularDome"
             Tags { "LightMode" = "UniversalForward" }
 
-            // Inside of sphere; draw early as a sky replacement.
+            // Inside of large sphere — draw early as sky background; content draws after.
             Cull Front
-            ZWrite On
+            ZWrite Off
             ZTest LEqual
+            Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
             #pragma vertex Vert
@@ -40,7 +44,9 @@ Shader "AR/EquirectangularDome"
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
                 half4 _BaseColor;
+                float _Opacity;
                 float _RotationY;
+                float _StereoMode;
             CBUFFER_END
 
             struct Attributes
@@ -84,12 +90,30 @@ Shader "AR/EquirectangularDome"
                 return uv;
             }
 
+            float2 ApplyStereoLayout(float2 uv)
+            {
+                // Phone AR has a single view — sample the left-eye half only.
+                if (_StereoMode > 1.5)
+                {
+                    // Top-Bottom: top half = left eye
+                    uv.y = uv.y * 0.5 + 0.5;
+                }
+                else if (_StereoMode > 0.5)
+                {
+                    // Side-by-Side: left half = left eye
+                    uv.x = uv.x * 0.5;
+                }
+
+                return uv;
+            }
+
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-                float2 uv = DirectionToEquirectUv(input.directionOS);
+                float2 uv = ApplyStereoLayout(DirectionToEquirectUv(input.directionOS));
                 half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv) * _BaseColor;
-                return half4(color.rgb, 1);
+                half alpha = saturate(color.a * _Opacity);
+                return half4(color.rgb, alpha);
             }
             ENDHLSL
         }

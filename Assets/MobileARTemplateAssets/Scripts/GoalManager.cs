@@ -183,7 +183,10 @@ namespace UnityEngine.XR.Templates.AR
 
         void Update()
         {
-            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame && !m_AllGoalsFinished && (m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces || m_CurrentGoal.CurrentGoal == OnboardingGoals.Hints || m_CurrentGoal.CurrentGoal == OnboardingGoals.Scale))
+            if (m_AllGoalsFinished)
+                return;
+
+            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame && (m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces || m_CurrentGoal.CurrentGoal == OnboardingGoals.Hints || m_CurrentGoal.CurrentGoal == OnboardingGoals.Scale))
             {
                 if (m_CurrentCoroutine != null)
                 {
@@ -195,20 +198,28 @@ namespace UnityEngine.XR.Templates.AR
 
         void CompleteGoal()
         {
-            if (m_CurrentGoal.CurrentGoal == OnboardingGoals.TapSurface)
+            if (m_AllGoalsFinished)
+                return;
+
+            if (m_CurrentGoal.CurrentGoal == OnboardingGoals.TapSurface && m_ObjectSpawner != null)
                 m_ObjectSpawner.objectSpawned -= OnObjectSpawned;
 
             m_CurrentGoal.Completed = true;
             m_CurrentGoalIndex++;
-            if (m_OnboardingGoals.Count > 0)
+            if (m_OnboardingGoals != null && m_OnboardingGoals.Count > 0)
             {
                 m_CurrentGoal = m_OnboardingGoals.Dequeue();
-                m_StepList[m_CurrentGoalIndex - 1].stepObject.SetActive(false);
-                m_StepList[m_CurrentGoalIndex].stepObject.SetActive(true);
+                if (m_CurrentGoalIndex - 1 >= 0 && m_CurrentGoalIndex - 1 < m_StepList.Count &&
+                    m_StepList[m_CurrentGoalIndex - 1].stepObject != null)
+                    m_StepList[m_CurrentGoalIndex - 1].stepObject.SetActive(false);
+                if (m_CurrentGoalIndex < m_StepList.Count && m_StepList[m_CurrentGoalIndex].stepObject != null)
+                    m_StepList[m_CurrentGoalIndex].stepObject.SetActive(true);
             }
             else
             {
-                m_StepList[m_CurrentGoalIndex - 1].stepObject.SetActive(false);
+                if (m_CurrentGoalIndex - 1 >= 0 && m_CurrentGoalIndex - 1 < m_StepList.Count &&
+                    m_StepList[m_CurrentGoalIndex - 1].stepObject != null)
+                    m_StepList[m_CurrentGoalIndex - 1].stepObject.SetActive(false);
                 m_AllGoalsFinished = true;
                 return;
             }
@@ -247,7 +258,13 @@ namespace UnityEngine.XR.Templates.AR
         {
             yield return new WaitForSeconds(seconds);
 
-            if (!Pointer.current.press.wasPressedThisFrame)
+            if (m_AllGoalsFinished)
+            {
+                m_CurrentCoroutine = null;
+                yield break;
+            }
+
+            if (Pointer.current == null || !Pointer.current.press.wasPressedThisFrame)
             {
                 m_CurrentCoroutine = null;
                 CompleteGoal();
@@ -262,12 +279,51 @@ namespace UnityEngine.XR.Templates.AR
             CompleteGoal();
         }
 
+        /// <summary>
+        /// Hides all onboarding / "Scan Surfaces" coaching UI and marks coaching finished.
+        /// Call when immersive content (e.g. 360 panorama) takes over the scene.
+        /// </summary>
+        public void DismissCoaching()
+        {
+            if (m_CurrentCoroutine != null)
+            {
+                StopCoroutine(m_CurrentCoroutine);
+                m_CurrentCoroutine = null;
+            }
+
+            if (m_ObjectSpawner != null)
+                m_ObjectSpawner.objectSpawned -= OnObjectSpawned;
+
+            if (m_StepList != null)
+            {
+                for (var i = 0; i < m_StepList.Count; i++)
+                {
+                    if (m_StepList[i]?.stepObject != null)
+                        m_StepList[i].stepObject.SetActive(false);
+                }
+            }
+
+            if (m_GreetingPrompt != null)
+                m_GreetingPrompt.SetActive(false);
+
+            if (m_OnboardingGoals != null)
+                m_OnboardingGoals.Clear();
+
+            m_AllGoalsFinished = true;
+            m_CurrentGoalIndex = m_StepList != null ? m_StepList.Count : 0;
+        }
+
         void OnObjectSpawned(GameObject spawnedObject)
         {
             m_SurfacesTapped++;
-            if (m_CurrentGoal.CurrentGoal == OnboardingGoals.TapSurface && m_SurfacesTapped >= k_NumberOfSurfacesTappedToCompleteGoal)
+            if (m_AllGoalsFinished)
+                return;
+
+            // After the first placed object, end coaching entirely (do not advance to Hints/Scale cards).
+            if (m_CurrentGoal.CurrentGoal == OnboardingGoals.TapSurface &&
+                m_SurfacesTapped >= k_NumberOfSurfacesTappedToCompleteGoal)
             {
-                CompleteGoal();
+                DismissCoaching();
             }
         }
 

@@ -4,6 +4,7 @@ Shader "AR/ImageSpriteTransparent"
     {
         [MainTexture] _BaseMap("Base Map (RGBA)", 2D) = "white" {}
         [MainColor] _BaseColor("Tint", Color) = (1, 1, 1, 1)
+        _Opacity("Opacity", Range(0, 1)) = 1
         _AlphaCutoff("Alpha Cutoff", Range(0, 0.5)) = 0.01
     }
 
@@ -39,6 +40,7 @@ Shader "AR/ImageSpriteTransparent"
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
                 half4 _BaseColor;
+                half _Opacity;
                 half _AlphaCutoff;
             CBUFFER_END
 
@@ -70,6 +72,7 @@ Shader "AR/ImageSpriteTransparent"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
+                color.a *= saturate(_Opacity);
 
                 // Honor PNG / texture alpha as-is (unlike VideoSprite which recovers opaque RGB).
                 if (color.a <= _AlphaCutoff)

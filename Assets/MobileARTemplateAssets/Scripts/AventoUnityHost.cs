@@ -211,8 +211,8 @@ namespace UnityEngine.XR.Templates.AR
                 this);
 
             m_BundleLoader.Configure(
-                string.IsNullOrWhiteSpace(opts.assetName) ? "PlacedContent" : opts.assetName,
-                string.IsNullOrWhiteSpace(opts.bundleFileName) ? "placedcontent" : opts.bundleFileName);
+                string.IsNullOrWhiteSpace(opts.assetName) ? string.Empty : opts.assetName.Trim(),
+                string.IsNullOrWhiteSpace(opts.bundleFileName) ? string.Empty : opts.bundleFileName.Trim());
 
             var done = false;
             GameObject prefab = null;
@@ -336,8 +336,8 @@ namespace UnityEngine.XR.Templates.AR
         {
             var opts = new OpenOptions
             {
-                assetName = "PlacedContent",
-                bundleFileName = "placedcontent",
+                assetName = string.Empty,
+                bundleFileName = string.Empty,
                 scale = 1f,
                 title = "Unity AR",
                 heading = 0f,
@@ -356,10 +356,11 @@ namespace UnityEngine.XR.Templates.AR
                 {
                     if (!string.IsNullOrWhiteSpace(dto.bundlePath))
                         opts.bundlePath = NormalizePath(dto.bundlePath);
-                    if (!string.IsNullOrWhiteSpace(dto.assetName))
-                        opts.assetName = dto.assetName;
-                    if (!string.IsNullOrWhiteSpace(dto.bundleFileName))
-                        opts.bundleFileName = dto.bundleFileName;
+                    // Blank assetName is intentional → load first GameObject in the bundle.
+                    if (dto.assetName != null)
+                        opts.assetName = dto.assetName.Trim();
+                    if (dto.bundleFileName != null)
+                        opts.bundleFileName = dto.bundleFileName.Trim();
                     if (!string.IsNullOrWhiteSpace(dto.title))
                         opts.title = dto.title;
                     if (dto.scale > 0f)

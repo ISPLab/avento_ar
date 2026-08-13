@@ -195,10 +195,12 @@ namespace UnityEngine.XR.Templates.AR.Editor
             Debug.Log(
                 $"[PlacedContentBundle] Built for {target}:\n{Path.GetFullPath(bundlePath)}\n" +
                 $"Prefab: {prefabPath}\n" +
-                $"unityAssetName: {assetName}\n" +
-                $"unityBundleFileName: {bundleName}\n" +
+                $"unityAssetName (optional override): {assetName}\n" +
+                $"local file: {bundleName}\n" +
                 $"Size ≈ {sizeMb:F2} MB\n" +
-                "Upload this file in avento-web (Unity Scene). Set asset name if not PlacedContent.",
+                "Upload this file in avento-web (Unity Scene). MinIO stores a GUID; " +
+                "the app caches by that GUID (local filename does not matter after upload). " +
+                "Leave Asset name blank in admin to auto-load the first prefab.",
                 AssetDatabase.LoadAssetAtPath<Object>(prefabPath));
 
             if (interactive)
@@ -209,9 +211,10 @@ namespace UnityEngine.XR.Templates.AR.Editor
                     $"Built OK for {target}\n\n" +
                     $"{bundlePath}\n≈ {sizeMb:F2} MB\n\n" +
                     $"Prefab: {prefabPath}\n" +
-                    $"avento-web → unityAssetName: {assetName}\n" +
-                    $"avento-web → unityBundleFileName: {bundleName}\n\n" +
-                    "Upload this one file (prefab + materials/shaders/videos).\n" +
+                    $"Suggested unityAssetName (optional): {assetName}\n" +
+                    $"Local output name: {bundleName}\n\n" +
+                    "Upload this one file in avento-web.\n" +
+                    "After upload, identity is the MinIO GUID (not this filename).\n" +
                     "Build separate bundles per platform (iOS / Android).",
                     "OK");
             }

@@ -27,6 +27,18 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         bool m_FitQuadToAspect = true;
 
+        [Tooltip("Overall sprite opacity (1 = fully opaque, 0 = invisible). Multiplies texture alpha.")]
+        [Range(0f, 1f)]
+        [SerializeField]
+        float m_Opacity = 1f;
+
+        [Header("Face camera")]
+        [Tooltip(
+            "On = sprite always turns to face the XR / main camera (billboard). " +
+            "Off = keeps placement / authored rotation.")]
+        [SerializeField]
+        bool m_FaceCamera = true;
+
         MeshRenderer m_Renderer;
         Vector3 m_BaseLocalScale;
         bool m_HasBaseScale;
@@ -53,14 +65,45 @@ namespace UnityEngine.XR.Templates.AR
             }
         }
 
+        public float opacity
+        {
+            get => m_Opacity;
+            set
+            {
+                m_Opacity = Mathf.Clamp01(value);
+                if (isActiveAndEnabled)
+                    ApplyOpacity(m_Renderer != null ? m_Renderer.material : null);
+            }
+        }
+
+        public bool faceCamera
+        {
+            get => m_FaceCamera;
+            set
+            {
+                m_FaceCamera = value;
+                ApplyFaceCameraOption();
+            }
+        }
+
         void Awake()
         {
             m_Renderer = GetComponent<MeshRenderer>();
             CaptureBaseScale();
+            ApplyFaceCameraOption();
         }
+
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            if (!Application.isPlaying)
+                ApplyFaceCameraOption();
+        }
+#endif
 
         void OnEnable()
         {
+            ApplyFaceCameraOption();
             ApplyImage();
         }
 
@@ -69,6 +112,7 @@ namespace UnityEngine.XR.Templates.AR
         {
             if (!m_HasBaseScale)
                 CaptureBaseScale();
+            ApplyFaceCameraOption();
             ApplyImage();
         }
 
@@ -76,6 +120,19 @@ namespace UnityEngine.XR.Templates.AR
         {
             m_BaseLocalScale = transform.localScale;
             m_HasBaseScale = true;
+        }
+
+        void ApplyFaceCameraOption()
+        {
+            var billboard = GetComponent<BillboardSprite>();
+            if (billboard == null)
+            {
+                if (!m_FaceCamera)
+                    return;
+                billboard = gameObject.AddComponent<BillboardSprite>();
+            }
+
+            billboard.rotateTowardCamera = m_FaceCamera;
         }
 
         void ApplyImage()
@@ -96,6 +153,7 @@ namespace UnityEngine.XR.Templates.AR
             var material = m_Renderer.material;
             ApplyTexture(material, tex);
             ApplyFlip(material);
+            ApplyOpacity(material);
             material.renderQueue = 3000;
 
             FitQuadToImageAspect(width, height);
@@ -104,8 +162,31 @@ namespace UnityEngine.XR.Templates.AR
             m_Renderer.receiveShadows = false;
 
             Debug.Log(
-                $"[ImageSprite] Applied '{tex.name}' {width}x{height} fit={m_FitQuadToAspect}",
+                $"[ImageSprite] Applied '{tex.name}' {width}x{height} fit={m_FitQuadToAspect} opacity={m_Opacity:0.##}",
                 this);
+        }
+
+        void ApplyOpacity(Material material)
+        {
+            if (material == null)
+                return;
+
+            var opacity = Mathf.Clamp01(m_Opacity);
+            if (material.HasProperty("_Opacity"))
+                material.SetFloat("_Opacity", opacity);
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                var c = material.GetColor("_BaseColor");
+                c.a = opacity;
+                material.SetColor("_BaseColor", c);
+            }
+            else if (material.HasProperty("_Color"))
+            {
+                var c = material.GetColor("_Color");
+                c.a = opacity;
+                material.SetColor("_Color", c);
+            }
         }
 
         bool ResolveImage(out int width, out int height, out Texture tex)

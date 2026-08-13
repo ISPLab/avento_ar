@@ -47,11 +47,10 @@ namespace UnityEngine.XR.Templates.AR
         public event Action<GameObject> PrefabLoaded;
         public event Action<string> LoadFailed;
 
-        /// <summary>Override asset name before loading (UaaL host).</summary>
+        /// <summary>Override asset name before loading (UaaL host). Blank → first GameObject.</summary>
         public void Configure(string assetName, string bundleFileName = null)
         {
-            if (!string.IsNullOrWhiteSpace(assetName))
-                m_AssetName = assetName.Trim();
+            m_AssetName = string.IsNullOrWhiteSpace(assetName) ? string.Empty : assetName.Trim();
             if (!string.IsNullOrWhiteSpace(bundleFileName))
                 m_BundleFileName = bundleFileName.Trim();
         }
@@ -330,18 +329,32 @@ namespace UnityEngine.XR.Templates.AR
 
             if (m_Bundle == null)
             {
+                var sizeMb = 0f;
+                try
+                {
+                    sizeMb = new FileInfo(path).Length / (1024f * 1024f);
+                }
+                catch
+                {
+                    // ignore
+                }
+                var playerVer = Application.unityVersion;
 #if UNITY_IOS || UNITY_IPHONE
                 var platformHint = header.looksLikeIos
-                    ? "File looks like iOS (Metal) but still failed — rebuild UaaL + AssetBundle with the same Unity version."
+                    ? $"iOS Metal UnityFS rejected by player {playerVer} (bundle engine={header.engineRevision}). " +
+                      "Often: phone still has an older admin download (URL cache), or bundle/UaaL built with different Unity. " +
+                      "Re-upload AssetBundles/iOS/placedcontent (new URL), reinstall app after UaaL integrate. " +
+                      "Dev check: ./scripts/check-unity-ar-versions.sh --sha256 --url <iosBundleUrl>"
                     : "This file looks like Android placedcontent (no Metal). Re-upload AssetBundles/iOS/placedcontent to the iOS field (both files share the name placedcontent).";
 #else
                 var platformHint = header.looksLikeIos
                     ? "This file looks like iOS placedcontent (Metal). Upload AssetBundles/Android/placedcontent to the Android field."
-                    : "Wrong platform or Unity version mismatch with the player.";
+                    : $"Wrong platform or Unity version mismatch (player={playerVer}, bundle={header.engineRevision}).";
 #endif
                 NotifyFailed(
                     $"[PlacedContentBundle] LoadFromFile/Memory failed: {path} " +
-                    $"(magic={header.magic}, format={header.unityVersion}, engine={header.engineRevision}). " +
+                    $"(magic={header.magic}, format={header.unityVersion}, engine={header.engineRevision}, " +
+                    $"player={playerVer}, size≈{sizeMb:F1}MB). " +
                     platformHint);
                 yield break;
             }

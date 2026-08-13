@@ -4,6 +4,7 @@ Shader "AR/VideoSpriteTransparent"
     {
         [MainTexture] _BaseMap("Base Map", 2D) = "white" {}
         [MainColor] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
+        _Opacity("Opacity", Range(0, 1)) = 1
         _AlphaCutoff("Alpha Cutoff", Range(0, 0.5)) = 0.02
     }
 
@@ -39,6 +40,7 @@ Shader "AR/VideoSpriteTransparent"
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
                 half4 _BaseColor;
+                half _Opacity;
                 half _AlphaCutoff;
             CBUFFER_END
 
@@ -78,6 +80,7 @@ Shader "AR/VideoSpriteTransparent"
                     color.a = 1.0h;
 
                 color.a = smoothstep(0.0h, _AlphaCutoff, color.a);
+                color.a *= saturate(_Opacity);
                 if (color.a <= 0.001h)
                     discard;
 

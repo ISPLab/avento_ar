@@ -491,8 +491,9 @@ echo ""
 echo "=============================================="
 echo " Done"
 echo "=============================================="
-echo "Content: packs Assets/Resources/PlacedContent.prefab → AssetBundles/<platform>/placedcontent"
-echo "         (simulator uses Resources.Load; device/UaaL prefers AssetBundle then Resources)."
+echo "Content: default batch packs Assets/Resources/PlacedContent.prefab → AssetBundles/<platform>/placedcontent"
+echo "         (any local name is fine; after admin upload the app caches by MinIO GUID)."
+echo "         Simulator uses Resources.Load; device/UaaL prefers AssetBundle then Resources)."
 echo ""
 [[ "$DO_IOS" -eq 1 ]] && echo "iOS export:     $OUT_IOS"
 [[ "$DO_ANDROID" -eq 1 ]] && echo "Android export: $OUT_ANDROID"
@@ -502,9 +503,21 @@ echo ""
 echo "Next: Xcode → device (iOS); Android Studio → ARCore device (Android)."
 if [[ "$SKIP_BUNDLE" -eq 0 ]]; then
   echo ""
-  echo "Upload bundles in avento-web if needed:"
-  [[ "$DO_IOS" -eq 1 ]] && echo "  iOS:     $BUNDLE_IOS"
-  [[ "$DO_ANDROID" -eq 1 ]] && echo "  Android: $BUNDLE_ANDROID"
+  echo "Upload built bundles in avento-web (Unity Scene) — MinIO stores GUID keys:"
+  if [[ "$DO_IOS" -eq 1 ]]; then
+    if [[ -f "$BUNDLE_IOS" ]]; then
+      echo "  iOS:     $BUNDLE_IOS"
+    else
+      echo "  iOS:     $PROJECT/AssetBundles/iOS/<name>  (pick the large UnityFS file, not the tiny 'iOS' catalog)"
+    fi
+  fi
+  if [[ "$DO_ANDROID" -eq 1 ]]; then
+    if [[ -f "$BUNDLE_ANDROID" ]]; then
+      echo "  Android: $BUNDLE_ANDROID"
+    else
+      echo "  Android: $PROJECT/AssetBundles/Android/<name>"
+    fi
+  fi
 fi
 
 if [[ "$NO_OPEN" -eq 0 ]]; then

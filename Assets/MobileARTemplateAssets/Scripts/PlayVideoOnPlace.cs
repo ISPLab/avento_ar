@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.Video;
 using Unity.XR.CoreUtils;
 
@@ -35,6 +36,16 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         bool m_FlipVertical;
 
+        [Header("Audio")]
+        [Tooltip("Play the video clip's audio track through an AudioSource on this object.")]
+        [SerializeField]
+        bool m_PlayAudio = true;
+
+        [Tooltip("0 = 2D (always same loudness), 1 = full 3D spatial (quieter with distance).")]
+        [SerializeField]
+        [Range(0f, 1f)]
+        float m_SpatialBlend = 1f;
+
         [Tooltip(
             "Resize this object's X/Y localScale to the video pixel aspect. " +
             "Authored Transform Y is treated as world height for Fit Height mode.")]
@@ -45,12 +56,18 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         AspectFitMode m_AspectFitMode = AspectFitMode.FitHeight;
 
-        [Header("Billboard / rotation")]
-        [Tooltip(
-            "When on, the video sprite automatically rotates to face the camera (BillboardSprite). " +
-            "When off, it keeps the placement / authored rotation.")]
+        [Tooltip("Overall sprite opacity (1 = fully opaque, 0 = invisible). Multiplies video alpha.")]
+        [Range(0f, 1f)]
         [SerializeField]
-        bool m_RotateTowardCamera = true;
+        float m_Opacity = 1f;
+
+        [Header("Face camera")]
+        [Tooltip(
+            "On = sprite always turns to face the XR / main camera (billboard). " +
+            "Off = keeps placement / authored rotation.")]
+        [FormerlySerializedAs("m_RotateTowardCamera")]
+        [SerializeField]
+        bool m_FaceCamera = true;
 
         [Header("Move toward camera")]
         [Tooltip("Walk the video billboard toward the XR / main camera on the ground plane.")]
@@ -77,6 +94,7 @@ namespace UnityEngine.XR.Templates.AR
         float m_WalkBobFrequency = 2f;
 
         VideoPlayer m_VideoPlayer;
+        AudioSource m_AudioSource;
         MeshRenderer m_Renderer;
         RenderTexture m_RenderTexture;
         bool m_Configured;
@@ -95,9 +113,34 @@ namespace UnityEngine.XR.Templates.AR
         {
             m_VideoPlayer = GetComponent<VideoPlayer>();
             m_Renderer = GetComponent<MeshRenderer>();
+            EnsureAudioSource();
             CaptureBaseScale();
-            ApplyBillboardOption();
+            ApplyFaceCameraOption();
             ConfigurePlayer();
+        }
+
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            // Keep BillboardSprite in sync when toggling in the Inspector.
+            if (!Application.isPlaying)
+                ApplyFaceCameraOption();
+        }
+#endif
+
+        void EnsureAudioSource()
+        {
+            if (!m_PlayAudio)
+                return;
+
+            if (m_AudioSource == null)
+                m_AudioSource = GetComponent<AudioSource>();
+            if (m_AudioSource == null)
+                m_AudioSource = gameObject.AddComponent<AudioSource>();
+
+            m_AudioSource.playOnAwake = false;
+            m_AudioSource.spatialBlend = m_SpatialBlend;
+            m_AudioSource.loop = false;
         }
 
         void OnEnable()
@@ -161,7 +204,7 @@ namespace UnityEngine.XR.Templates.AR
 
             ConfigurePlayer();
             EnsureFitRoutine();
-            ApplyBillboardOption();
+            ApplyFaceCameraOption();
             BeginApproachIfEnabled();
 
             if (isActiveAndEnabled && m_VideoPlayer != null)
@@ -180,23 +223,45 @@ namespace UnityEngine.XR.Templates.AR
         }
 
         /// <summary>Enable/disable automatic camera-facing rotation (billboard).</summary>
-        public void SetRotateTowardCamera(bool enabled)
+        public bool faceCamera
         {
-            m_RotateTowardCamera = enabled;
-            ApplyBillboardOption();
+            get => m_FaceCamera;
+            set => SetFaceCamera(value);
         }
 
-        void ApplyBillboardOption()
+        public float opacity
+        {
+            get => m_Opacity;
+            set
+            {
+                m_Opacity = Mathf.Clamp01(value);
+                if (m_Renderer != null)
+                    ApplyOpacity(m_Renderer.material);
+            }
+        }
+
+        /// <summary>Enable/disable automatic camera-facing rotation (billboard).</summary>
+        public void SetFaceCamera(bool enabled)
+        {
+            m_FaceCamera = enabled;
+            ApplyFaceCameraOption();
+        }
+
+        /// <summary>Obsolete alias — use <see cref="SetFaceCamera"/>.</summary>
+        public void SetRotateTowardCamera(bool enabled) => SetFaceCamera(enabled);
+
+        void ApplyFaceCameraOption()
         {
             var billboard = GetComponent<BillboardSprite>();
             if (billboard == null)
             {
-                if (!m_RotateTowardCamera)
+                if (!m_FaceCamera || !Application.isPlaying)
                     return;
                 billboard = gameObject.AddComponent<BillboardSprite>();
             }
 
-            billboard.rotateTowardCamera = m_RotateTowardCamera;
+            billboard.rotateTowardCamera = m_FaceCamera;
+            billboard.enabled = m_FaceCamera;
         }
 
         /// <summary>Enable/disable approach movement at runtime (e.g. from host JSON later).</summary>
@@ -318,10 +383,22 @@ namespace UnityEngine.XR.Templates.AR
             m_VideoPlayer.waitForFirstFrame = true;
             m_VideoPlayer.isLooping = true;
             m_VideoPlayer.skipOnDrop = true;
-            m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.None;
             m_VideoPlayer.clip = m_VideoClip;
             // Quad is resized to the pixel aspect; texture should fill that quad.
             m_VideoPlayer.aspectRatio = VideoAspectRatio.Stretch;
+
+            EnsureAudioSource();
+            if (m_PlayAudio && m_AudioSource != null)
+            {
+                m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+                m_VideoPlayer.controlledAudioTrackCount = 1;
+                m_VideoPlayer.EnableAudioTrack(0, true);
+                m_VideoPlayer.SetTargetAudioSource(0, m_AudioSource);
+            }
+            else
+            {
+                m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+            }
 
             // Best-effort early fit from clip metadata (often 0 until Prepare on some platforms).
             TryFitFromClipMetadata();
@@ -341,6 +418,7 @@ namespace UnityEngine.XR.Templates.AR
                 m_VideoPlayer.targetMaterialProperty = m_TexturePropertyName;
             }
 
+            ApplyOpacity(material);
             m_Renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_Renderer.receiveShadows = false;
             m_Configured = true;
@@ -565,6 +643,29 @@ namespace UnityEngine.XR.Templates.AR
                 material.mainTexture = texture;
         }
 
+        void ApplyOpacity(Material material)
+        {
+            if (material == null)
+                return;
+
+            var opacity = Mathf.Clamp01(m_Opacity);
+            if (material.HasProperty("_Opacity"))
+                material.SetFloat("_Opacity", opacity);
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                var c = material.GetColor("_BaseColor");
+                c.a = opacity;
+                material.SetColor("_BaseColor", c);
+            }
+            else if (material.HasProperty("_Color"))
+            {
+                var c = material.GetColor("_Color");
+                c.a = opacity;
+                material.SetColor("_Color", c);
+            }
+        }
+
         static void ClearRenderTexture(RenderTexture renderTexture)
         {
             var previous = RenderTexture.active;
@@ -584,6 +685,8 @@ namespace UnityEngine.XR.Templates.AR
         {
             // Some platforms only expose stable width/height after the first frame.
             ApplyFitFromPreparedSource(source);
+            if (m_Renderer != null)
+                ApplyOpacity(m_Renderer.material);
             BeginApproachIfEnabled();
         }
 

@@ -747,12 +747,42 @@ namespace UnityEngine.XR.Templates.AR
                 m_AutoPlaceInFlight = false;
             }
 
+            DismissSurfaceCoachingAfterPlace();
+
             m_Status = $"placed '{instance.name}' yaw={m_HeadingDegrees:0.#}° total={m_Placements.Count}";
             Debug.Log(
                 $"[TapPlace] OK — placed '{instance.name}' at {instance.transform.position} " +
                 $"rot={instance.transform.rotation.eulerAngles} heading={m_HeadingDegrees} " +
                 $"(anchor {anchor.trackableId}, total={m_Placements.Count}, auto={markAutoDone})",
                 this);
+        }
+
+        /// <summary>
+        /// Hide Scan Surfaces / coaching cards and plane overlays once content is on the floor.
+        /// Does not rely on PanoramaSkyboxViewer (bundle timing / ObjectSpawner path).
+        /// </summary>
+        void DismissSurfaceCoachingAfterPlace()
+        {
+            var goals = FindObjectsByType<GoalManager>(FindObjectsInactive.Include);
+            for (var i = 0; i < goals.Length; i++)
+            {
+                if (goals[i] != null)
+                    goals[i].DismissCoaching();
+            }
+
+            var menus = FindObjectsByType<ARTemplateMenuManager>(FindObjectsInactive.Include);
+            for (var i = 0; i < menus.Length; i++)
+            {
+                if (menus[i] != null)
+                    menus[i].SetPlaneVisualizationVisible(false);
+            }
+
+            var faders = FindObjectsByType<ARPlaneMeshVisualizerFader>(FindObjectsInactive.Include);
+            for (var i = 0; i < faders.Length; i++)
+            {
+                if (faders[i] != null)
+                    faders[i].visualizeSurfaces = false;
+            }
         }
 
         /// <summary>
