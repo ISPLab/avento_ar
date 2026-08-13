@@ -19,9 +19,6 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         TapToPlaceOnAnchor m_TapToPlace;
 
-        [SerializeField]
-        bool m_ShowExitButton = true;
-
         static AventoUnityHost s_Instance;
         bool m_SessionOpen;
         string m_PendingOpenJson;
@@ -29,7 +26,20 @@ namespace UnityEngine.XR.Templates.AR
         Coroutine m_OpenRoutine;
         string m_OpenBundlePath;
 
+        public const float ExitChromeSize = 52f;
+        public const float ExitChromeBottomPad = 12f;
+
         public static AventoUnityHost Instance => s_Instance;
+
+        public static Rect ExitChromeImguiRect()
+        {
+            var x = (Screen.width - ExitChromeSize) * 0.5f;
+            var y = Screen.height - ExitChromeSize - ExitChromeBottomPad;
+            return new Rect(x, y, ExitChromeSize, ExitChromeSize);
+        }
+
+        public static bool IsInExitChromeImgui(Vector2 imguiPos) =>
+            ExitChromeImguiRect().Contains(imguiPos);
 
         void Awake()
         {
@@ -74,18 +84,6 @@ namespace UnityEngine.XR.Templates.AR
         {
             if (s_Instance == this)
                 s_Instance = null;
-        }
-
-        void OnGUI()
-        {
-            if (!m_ShowExitButton || !m_SessionOpen)
-                return;
-
-            const float w = 120f;
-            const float h = 44f;
-            var rect = new Rect(16f, 16f, w, h);
-            if (GUI.Button(rect, "Exit AR"))
-                RequestExit();
         }
 
         /// <summary>

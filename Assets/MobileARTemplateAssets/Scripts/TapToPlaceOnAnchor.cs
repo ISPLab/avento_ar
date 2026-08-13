@@ -224,8 +224,8 @@ namespace UnityEngine.XR.Templates.AR
             var ev = Event.current;
             if (ev != null && ev.type == EventType.MouseDown && ev.button == 0)
             {
-                // Ignore Exit AR button area (top-left) so Host OnGUI can handle it.
-                if (ev.mousePosition.x > 140f || ev.mousePosition.y > 60f)
+                // Ignore TabBar-style cancel chrome (bottom center).
+                if (!AventoUnityHost.IsInExitChromeImgui(ev.mousePosition))
                 {
                     m_QueuedTap = new Vector2(ev.mousePosition.x, Screen.height - ev.mousePosition.y);
                     m_HasQueuedTap = true;

@@ -204,6 +204,17 @@ namespace UnityEngine.XR.Templates.AR
             }
         }
 
+        public float opacity
+        {
+            get => m_Opacity;
+            set
+            {
+                m_Opacity = Mathf.Clamp01(value);
+                if (isActiveAndEnabled)
+                    ApplyLiveDomeParams();
+            }
+        }
+
         void OnEnable()
         {
             ResolveLookTarget();
@@ -261,6 +272,10 @@ namespace UnityEngine.XR.Templates.AR
             TeardownVideo();
             m_ShowingVideo = false;
 
+            Debug.Log(
+                $"[PanoramaSkybox] Applying Content Mode={m_ContentMode} opacity={m_Opacity:0.###}",
+                this);
+
             if (IsVideoMode)
             {
                 EnsureDome();
@@ -272,6 +287,41 @@ namespace UnityEngine.XR.Templates.AR
                 ApplyPanorama();
             }
         }
+
+        /// <summary>Called from the custom inspector after Content Mode / clip / texture changes.</summary>
+        public void RestartContentFromInspector()
+        {
+            if (!isActiveAndEnabled)
+                return;
+            RestartContent();
+        }
+
+        /// <summary>Called from the custom inspector for opacity / exposure / look without restarting media.</summary>
+        public void ApplyLiveDomeParamsFromInspector()
+        {
+            if (!isActiveAndEnabled)
+                return;
+            ApplyLiveDomeParams();
+        }
+
+        void ApplyLiveDomeParams()
+        {
+            ApplyDomeMaterialParams();
+            KeepDomeOnCamera();
+            UpdateArCameraBackgroundVisibility();
+        }
+
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            if (Application.isPlaying)
+                return;
+            // Keep VideoPlayer from previewing when Content Mode is Still Image.
+            var vp = GetComponent<VideoPlayer>();
+            if (vp != null && m_ContentMode != ContentMode.Video && vp.isPlaying)
+                vp.Stop();
+        }
+#endif
 
         void LateUpdate()
         {
@@ -449,6 +499,7 @@ namespace UnityEngine.XR.Templates.AR
             renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
 
             KeepDomeOnCamera();
+            ApplyDomeMaterialParams();
         }
 
         void ApplyStillToDome()
@@ -497,8 +548,7 @@ namespace UnityEngine.XR.Templates.AR
                 m_DomeMaterial.SetColor("_BaseColor", c);
             }
 
-            if (m_DomeMaterial.HasProperty("_Opacity"))
-                m_DomeMaterial.SetFloat("_Opacity", Mathf.Clamp01(m_Opacity));
+            m_DomeMaterial.SetFloat("_Opacity", Mathf.Clamp01(m_Opacity));
             if (m_DomeMaterial.HasProperty("_RotationY"))
                 m_DomeMaterial.SetFloat("_RotationY", m_YawOffset);
             if (m_DomeMaterial.HasProperty("_StereoMode"))

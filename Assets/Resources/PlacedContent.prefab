@@ -1356,7 +1356,7 @@ MonoBehaviour:
   m_MaxPitch: 89
   m_LookTarget: {fileID: 0}
   m_Exposure: 1
-  m_Opacity: 0.5
+  m_Opacity: 0.829
   m_YawOffset: 0
 --- !u!1 &8123456789012345001
 GameObject:
