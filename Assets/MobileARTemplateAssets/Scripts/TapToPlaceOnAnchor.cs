@@ -271,10 +271,24 @@ namespace UnityEngine.XR.Templates.AR
         {
             ResolveManagers();
 
+#if UNITY_EDITOR
+            // Editor / XR Simulation: no native download. Use Resources or the scene template.
+            if (m_ContentPrefab == null)
+                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+            m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
+            m_Status = m_Ready
+                ? $"ready prefab={m_ContentPrefab.name}"
+                : $"NOT ready ray={(m_RaycastManager != null)} anc={(m_AnchorManager != null)} prefab={(m_ContentPrefab != null)}";
+            if (!m_Ready)
+                Debug.LogError($"[TapPlace] {m_Status}", this);
+            else
+                Debug.Log($"[TapPlace] Ready. Prefab='{m_ContentPrefab.name}'. Tap a plane.", this);
+            yield break;
+#else
             var hostPresent = AventoUnityHost.Instance != null;
             if (m_ContentPrefab == null)
             {
-                // UaaL: wait for the native-downloaded AssetBundle, not Resources/PlacedContent.
+                // Device UaaL: wait for the native-downloaded AssetBundle, not Resources.
                 var waitHostUntil = Time.realtimeSinceStartup + 45f;
                 while (m_ContentPrefab == null && Time.realtimeSinceStartup < waitHostUntil)
                 {
@@ -308,13 +322,9 @@ namespace UnityEngine.XR.Templates.AR
                 }
             }
 
-            // Never fall back to Resources while the native host owns the session —
-            // that shows the baked PlacedContent sprites, then the real bundle error.
             if (m_ContentPrefab == null && !hostPresent && !m_HostOwnsPrefab)
-                m_ContentPrefab = FindContentPrefabByName();
-
-            if (m_ContentPrefab == null && !hostPresent && !m_HostOwnsPrefab)
-                m_ContentPrefab = FindSceneTemplatePrefab();
+                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+#endif
 
             m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
             m_Status = m_Ready
@@ -356,14 +366,20 @@ namespace UnityEngine.XR.Templates.AR
         }
 
         /// <summary>
-        /// Editor / standalone only. In UaaL the host supplies the downloaded prefab —
-        /// Resources/PlacedContent would flash the baked sprites then get replaced by an error.
+        /// Editor Play Mode / XR Simulation: load Resources or the scene template.
+        /// On device UaaL the host supplies the downloaded prefab — do not use Resources there.
         /// </summary>
         void TryAssignEditorOrResourcesFallback()
         {
+#if UNITY_EDITOR
+            if (m_ContentPrefab != null)
+                return;
+            m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+#else
             if (m_HostOwnsPrefab || AventoUnityHost.Instance != null)
                 return;
             m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+#endif
         }
 
         GameObject FindContentPrefabByName()
