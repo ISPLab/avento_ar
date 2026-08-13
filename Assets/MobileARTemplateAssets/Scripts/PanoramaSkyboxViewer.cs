@@ -116,10 +116,10 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         float m_Exposure = 1f;
 
-        [Tooltip("Dome opacity over the live camera (1 = fully opaque, 0 = invisible). Default 0.5.")]
+        [Tooltip("Dome opacity over the live camera (1 = fully opaque, 0 = invisible). Default 0.95.")]
         [Range(0f, 1f)]
         [SerializeField]
-        float m_Opacity = 0.9f;
+        float m_Opacity = 0.95f;
 
         [SerializeField]
         float m_YawOffset;

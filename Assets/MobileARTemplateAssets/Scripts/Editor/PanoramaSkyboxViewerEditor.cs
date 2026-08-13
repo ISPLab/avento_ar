@@ -126,7 +126,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 1f,
                 new GUIContent(
                     "Opacity",
-                    "How solid the 360 dome is over the live camera. Saved on the prefab and packed into the AssetBundle (0 = camera only, 1 = fully opaque)."));
+                    "How solid the 360 dome is over the live camera. Default 0.95. Saved on the prefab and packed into the AssetBundle (0 = camera only, 1 = fully opaque)."));
             if (m_Opacity != null)
             {
                 EditorGUILayout.HelpBox(

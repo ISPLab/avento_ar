@@ -4,7 +4,7 @@ Shader "AR/EquirectangularDome"
     {
         [MainTexture] _BaseMap("Equirectangular Map", 2D) = "gray" {}
         [MainColor] _BaseColor("Tint", Color) = (1, 1, 1, 1)
-        _Opacity("Opacity", Range(0, 1)) = 0.5
+        _Opacity("Opacity", Range(0, 1)) = 0.95
         _RotationY("Yaw Rotation (deg)", Float) = 0
         // 0 = Mono, 1 = Side-by-Side (left eye), 2 = Top-Bottom (top / left eye)
         _StereoMode("Stereo Mode", Float) = 0

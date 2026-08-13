@@ -767,6 +767,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: PlacedContent
       objectReference: {fileID: 0}
+    - target: {fileID: 9012345678901234567, guid: e1a2b3c4d5e6f708192a3b4c5d6e7f80, type: 3}
+      propertyPath: m_Opacity
+      value: 0.95
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
