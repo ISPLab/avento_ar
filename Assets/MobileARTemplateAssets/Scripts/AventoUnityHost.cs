@@ -27,6 +27,7 @@ namespace UnityEngine.XR.Templates.AR
         string m_PendingOpenJson;
         bool m_HostAliveNotified;
         Coroutine m_OpenRoutine;
+        string m_OpenBundlePath;
 
         public static AventoUnityHost Instance => s_Instance;
 
@@ -105,6 +106,17 @@ namespace UnityEngine.XR.Templates.AR
                 return;
             }
 
+            var opts = ParseOpenOptions(json);
+            if (!string.IsNullOrWhiteSpace(opts.bundlePath) &&
+                m_OpenRoutine != null &&
+                string.Equals(m_OpenBundlePath, opts.bundlePath, StringComparison.Ordinal) &&
+                (m_BundleLoader != null && (m_BundleLoader.IsLoading || m_BundleLoader.IsLoaded)))
+            {
+                Debug.Log("[AventoUnityHost] Ignoring duplicate OpenFromNative for the same bundle path", this);
+                return;
+            }
+
+            m_OpenBundlePath = opts.bundlePath;
             if (m_OpenRoutine != null)
                 StopCoroutine(m_OpenRoutine);
             m_OpenRoutine = StartCoroutine(OpenRoutine(json));
@@ -302,6 +314,7 @@ namespace UnityEngine.XR.Templates.AR
             var count = m_TapToPlace != null ? m_TapToPlace.PlacementCount : 0;
             m_TapToPlace?.ClearAllPlacements();
             m_BundleLoader?.Unload();
+            m_OpenBundlePath = null;
 
             var payload =
                 "{\"reason\":\"" + Escape(reason) + "\",\"placementsCount\":" + count + "}";
@@ -320,6 +333,15 @@ namespace UnityEngine.XR.Templates.AR
 
         void NotifyNativeError(string message)
         {
+            // Don't clobber a session that already placed content (duplicate OpenFromNative).
+            if (m_TapToPlace != null && m_TapToPlace.contentPrefab != null && m_SessionOpen)
+            {
+                Debug.LogWarning(
+                    $"[AventoUnityHost] Suppressing error after content already assigned: {message}",
+                    this);
+                return;
+            }
+
             m_SessionOpen = false;
             var payload = "{\"error\":\"" + Escape(message) + "\"}";
             AventoUnityNative.NotifyError(payload);

@@ -128,7 +128,7 @@ namespace UnityEngine.XR.Templates.AR
             {
                 ResolveManagers();
                 if (m_ContentPrefab == null)
-                    m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+                    TryAssignEditorOrResourcesFallback();
                 m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
                 if (!m_Ready)
                 {
@@ -271,14 +271,23 @@ namespace UnityEngine.XR.Templates.AR
         {
             ResolveManagers();
 
+            var hostPresent = AventoUnityHost.Instance != null;
             if (m_ContentPrefab == null)
             {
-                var waitHostUntil = Time.realtimeSinceStartup + 2.5f;
+                // UaaL: wait for the native-downloaded AssetBundle, not Resources/PlacedContent.
+                var waitHostUntil = Time.realtimeSinceStartup + 45f;
                 while (m_ContentPrefab == null && Time.realtimeSinceStartup < waitHostUntil)
+                {
+                    hostPresent = AventoUnityHost.Instance != null;
+                    if (!hostPresent && Time.realtimeSinceStartup > 2.5f)
+                        break;
                     yield return null;
+                }
             }
 
-            if (m_ContentPrefab == null && m_PreferAssetBundle && !m_HostOwnsPrefab)
+            hostPresent = AventoUnityHost.Instance != null || m_HostOwnsPrefab;
+
+            if (m_ContentPrefab == null && m_PreferAssetBundle && !m_HostOwnsPrefab && !hostPresent)
             {
                 if (m_BundleLoader == null)
                     m_BundleLoader = gameObject.AddComponent<PlacedContentBundleLoader>();
@@ -299,10 +308,12 @@ namespace UnityEngine.XR.Templates.AR
                 }
             }
 
-            if (m_ContentPrefab == null)
+            // Never fall back to Resources while the native host owns the session —
+            // that shows the baked PlacedContent sprites, then the real bundle error.
+            if (m_ContentPrefab == null && !hostPresent && !m_HostOwnsPrefab)
                 m_ContentPrefab = FindContentPrefabByName();
 
-            if (m_ContentPrefab == null)
+            if (m_ContentPrefab == null && !hostPresent && !m_HostOwnsPrefab)
                 m_ContentPrefab = FindSceneTemplatePrefab();
 
             m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
@@ -342,6 +353,17 @@ namespace UnityEngine.XR.Templates.AR
                 m_PlaneManager.enabled = true;
                 Debug.LogWarning("[TapPlace] ARPlaneManager was disabled — enabled.", this);
             }
+        }
+
+        /// <summary>
+        /// Editor / standalone only. In UaaL the host supplies the downloaded prefab —
+        /// Resources/PlacedContent would flash the baked sprites then get replaced by an error.
+        /// </summary>
+        void TryAssignEditorOrResourcesFallback()
+        {
+            if (m_HostOwnsPrefab || AventoUnityHost.Instance != null)
+                return;
+            m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
         }
 
         GameObject FindContentPrefabByName()
@@ -441,7 +463,7 @@ namespace UnityEngine.XR.Templates.AR
             {
                 ResolveManagers();
                 if (m_ContentPrefab == null)
-                    m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+                    TryAssignEditorOrResourcesFallback();
                 m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
                 if (!m_Ready)
                 {
@@ -567,7 +589,7 @@ namespace UnityEngine.XR.Templates.AR
 
             ResolveManagers();
             if (m_ContentPrefab == null)
-                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+                TryAssignEditorOrResourcesFallback();
             m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
             return m_Ready;
         }

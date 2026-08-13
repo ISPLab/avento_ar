@@ -39,6 +39,7 @@ namespace UnityEngine.XR.Templates.AR
         Coroutine m_LoadRoutine;
         int m_LoadGeneration;
         bool m_LoadFailedNotified;
+        string m_AbsoluteLoadPath;
 
         public GameObject LoadedPrefab => m_Prefab;
         public bool IsLoaded => m_Prefab != null;
@@ -68,9 +69,25 @@ namespace UnityEngine.XR.Templates.AR
 
             absolutePath = SanitizeAbsolutePath(absolutePath);
 
+            // Duplicate OpenFromNative (present + awaitingOpen) must not cancel an in-flight
+            // LoadFromFileAsync — that leaves the bundle loaded in the player with m_Bundle=null,
+            // so the retry's LoadFromFile/Memory returns null and looks like a version mismatch.
+            if (string.Equals(m_AbsoluteLoadPath, absolutePath, StringComparison.Ordinal) &&
+                (m_Prefab != null || m_Loading))
+            {
+                if (m_Prefab != null)
+                    PrefabLoaded?.Invoke(m_Prefab);
+                Debug.Log(
+                    $"[PlacedContentBundle] Skipping duplicate load of {absolutePath} " +
+                    $"(loaded={m_Prefab != null} loading={m_Loading})",
+                    this);
+                return;
+            }
+
             // Native path always wins — cancel StreamingAssets / cache probes started by TapToPlace.
             CancelInFlightLoad();
             m_LoadFailedNotified = false;
+            m_AbsoluteLoadPath = absolutePath;
             m_LoadRoutine = StartCoroutine(LoadAbsolutePathCoroutine(absolutePath));
         }
 
@@ -129,7 +146,7 @@ namespace UnityEngine.XR.Templates.AR
                     m_LoadRoutine = null;
                     NotifyFailed(
                         $"[PlacedContentBundle] File too small ({info.Length} bytes) — " +
-                        "likely uploaded AssetBundles/iOS/iOS catalog instead of placedcontent (~20MB). " +
+                        "likely uploaded the AssetBundles/iOS/iOS catalog instead of the content pack (~20MB). " +
                         $"path={absolutePath}");
                 }
 
@@ -144,13 +161,14 @@ namespace UnityEngine.XR.Templates.AR
                     m_LoadRoutine = null;
                     NotifyFailed(
                         $"[PlacedContentBundle] Not a Unity AssetBundle (magic={header.magic}). " +
-                        "Re-upload AssetBundles/iOS/placedcontent from Unity.");
+                        "Re-upload the iOS UnityFS file from AssetBundles/iOS/.");
                 }
 
                 yield break;
             }
 
             UnloadBundleOnly();
+            yield return null;
             yield return LoadFromFile(absolutePath, gen, header);
 
             if (gen != m_LoadGeneration)
@@ -295,6 +313,16 @@ namespace UnityEngine.XR.Templates.AR
 
         IEnumerator LoadFromFile(string path, int gen, BundleHeader header)
         {
+            m_Bundle = FindAlreadyLoadedContentBundle();
+            if (m_Bundle != null)
+            {
+                Debug.Log(
+                    $"[PlacedContentBundle] Reusing already-loaded AssetBundle '{m_Bundle.name}'",
+                    this);
+                ExtractPrefab();
+                yield break;
+            }
+
             var request = AssetBundle.LoadFromFileAsync(path);
             yield return request;
 
@@ -302,6 +330,9 @@ namespace UnityEngine.XR.Templates.AR
                 yield break;
 
             m_Bundle = request.assetBundle;
+            if (m_Bundle == null)
+                m_Bundle = FindAlreadyLoadedContentBundle();
+
             if (m_Bundle == null)
             {
                 // Fallback: some iOS paths fail LoadFromFile but succeed from memory.
@@ -325,6 +356,8 @@ namespace UnityEngine.XR.Templates.AR
                 if (gen != m_LoadGeneration)
                     yield break;
                 m_Bundle = memReq.assetBundle;
+                if (m_Bundle == null)
+                    m_Bundle = FindAlreadyLoadedContentBundle();
             }
 
             if (m_Bundle == null)
@@ -339,27 +372,72 @@ namespace UnityEngine.XR.Templates.AR
                     // ignore
                 }
                 var playerVer = Application.unityVersion;
+                var loaded = ListLoadedBundleNames();
 #if UNITY_IOS || UNITY_IPHONE
                 var platformHint = header.looksLikeIos
                     ? $"iOS Metal UnityFS rejected by player {playerVer} (bundle engine={header.engineRevision}). " +
-                      "Often: phone still has an older admin download (URL cache), or bundle/UaaL built with different Unity. " +
-                      "Re-upload AssetBundles/iOS/placedcontent (new URL), reinstall app after UaaL integrate. " +
-                      "Dev check: ./scripts/check-unity-ar-versions.sh --sha256 --url <iosBundleUrl>"
-                    : "This file looks like Android placedcontent (no Metal). Re-upload AssetBundles/iOS/placedcontent to the iOS field (both files share the name placedcontent).";
+                      "Often a duplicate OpenFromNative left the bundle already loaded, or Resources " +
+                      "fallback raced the download. Rebuild UaaL after this player fix; Try again without " +
+                      "relying on Resources/PlacedContent. Dev: ./scripts/check-unity-ar-versions.sh --sha256 --url <iosBundleUrl>"
+                    : "This file looks like an Android AssetBundle (no Metal). Upload the iOS build from AssetBundles/iOS/.";
 #else
                 var platformHint = header.looksLikeIos
-                    ? "This file looks like iOS placedcontent (Metal). Upload AssetBundles/Android/placedcontent to the Android field."
+                    ? "This file looks like an iOS AssetBundle (Metal). Upload the Android build from AssetBundles/Android/."
                     : $"Wrong platform or Unity version mismatch (player={playerVer}, bundle={header.engineRevision}).";
 #endif
                 NotifyFailed(
                     $"[PlacedContentBundle] LoadFromFile/Memory failed: {path} " +
                     $"(magic={header.magic}, format={header.unityVersion}, engine={header.engineRevision}, " +
-                    $"player={playerVer}, size≈{sizeMb:F1}MB). " +
+                    $"player={playerVer}, size≈{sizeMb:F1}MB, alreadyLoaded=[{loaded}]). " +
                     platformHint);
                 yield break;
             }
 
             ExtractPrefab();
+        }
+
+        static AssetBundle FindAlreadyLoadedContentBundle()
+        {
+            var loaded = AssetBundle.GetAllLoadedAssetBundles();
+            if (loaded == null)
+                return null;
+            foreach (var bundle in loaded)
+            {
+                if (bundle == null)
+                    continue;
+                var n = bundle.name ?? "";
+                if (n.StartsWith("unitydefault", StringComparison.OrdinalIgnoreCase) ||
+                    n.Contains("unity_builtin"))
+                    continue;
+                return bundle;
+            }
+
+            return null;
+        }
+
+        static string ListLoadedBundleNames()
+        {
+            try
+            {
+                var loaded = AssetBundle.GetAllLoadedAssetBundles();
+                if (loaded == null)
+                    return "";
+                var sb = new StringBuilder();
+                foreach (var bundle in loaded)
+                {
+                    if (bundle == null)
+                        continue;
+                    if (sb.Length > 0)
+                        sb.Append(',');
+                    sb.Append(bundle.name);
+                }
+
+                return sb.ToString();
+            }
+            catch
+            {
+                return "?";
+            }
         }
 
         void ExtractPrefab()
@@ -373,7 +451,7 @@ namespace UnityEngine.XR.Templates.AR
                 var names = ListAssetNames(m_Bundle);
                 NotifyFailed(
                     $"Asset '{m_AssetName}' missing in bundle. Assets=[{names}]. " +
-                    "Upload AssetBundles/iOS/placedcontent (not the small 'iOS' catalog file).");
+                    "Leave Asset name blank in admin to auto-load the first prefab.");
                 return;
             }
 
@@ -607,6 +685,7 @@ namespace UnityEngine.XR.Templates.AR
         {
             CancelInFlightLoad();
             UnloadBundleOnly();
+            m_AbsoluteLoadPath = null;
             m_LoadFailedNotified = false;
         }
     }
