@@ -7,6 +7,9 @@ End-to-end documentation for **Unity Scene** AR (`unity_scene`): author content 
 | [`readme.avento.md`](readme.avento.md) | Original implementation plan + decision log |
 | [`readme.ar.android.md`](readme.ar.android.md) | Android UaaL checklist / build notes |
 | [`readme.notap.md`](readme.notap.md) | iOS tap / UaaL input debugging |
+| [`readme.ar.interaction.md`](readme.ar.interaction.md) | Object tap / NPC proximity / **auto Tessa on scene start** → Google TTS + Live Guide |
+
+
 
 ---
 
@@ -85,7 +88,35 @@ Do **not** mix platforms: an iOS bundle will not load on Android (and vice versa
 2. Include materials, shaders, video clips as dependencies (AssetBundle packs them).
 3. Keep the player scene able to host AR Foundation + `AventoUnityHost` (Mobile AR template entry scene).
 
-### 3.4 Build content AssetBundles
+### 3.4 Transparent video sprite (`walking_man`)
+
+The placed man is a **quad + VideoPlayer + `PlayVideoOnPlace`**, material `VideoPlane` / shader `AR/VideoSpriteTransparent`. Alpha comes from the video, not from chroma-key.
+
+| Path | Clip | Render |
+|------|------|--------|
+| **iPhone / Android device** | `Assets/Videos/walking_man_device.mov` — **HEVC with Alpha** | `VideoRenderMode.MaterialOverride` → `_BaseMap` |
+| **Editor / macOS Simulator** | `man_with_transparent_editor.mov` (QT RLE) or opaque H.264 fallback | `RenderTexture` |
+
+**Why the white box:** iOS AVFoundation cannot decode **Apple ProRes 4444** (`man_with_transparent.mov`). If that file is packed into the AssetBundle, Prepare fails with `Cannot read file` and the quad stays the default white `_BaseMap`. Unity **Keep Alpha + Transcode** does **not** rewrite ProRes inside AssetBundles (the iOS pack still contained `ap4h`).
+
+**Device clip (do not Unity-transcode)**
+
+```bash
+# From the ProRes master — Apple HEVC-with-alpha. Do not ffmpeg-remux (strips alpha).
+avconvert \
+  --source Assets/Videos/man_with_transparent.mov \
+  --output Assets/Videos/walking_man_device.mov \
+  --preset PresetHEVC1920x1080WithAlpha \
+  --replace
+```
+
+Importer on `walking_man_device.mov`: **Keep Alpha = on**, **Transcode = off**, **Import Audio = off**.
+
+iOS plays this natively (AVFoundation **HEVC with Alpha**). Android may decode the color stream but ignore Apple’s alpha plane — if the man gets a black box there, ship a platform-specific clip later.
+
+Then: **AR Test → Build PlacedContent AssetBundle (iOS)** → re-upload in avento-web → force redownload on device. Player/UaaL rebuild is only needed if `PlayVideoOnPlace.cs` changed; the clip lives in the **content** bundle.
+
+### 3.5 Build content AssetBundles
 
 **Menus**
 
@@ -108,7 +139,7 @@ UnityEngine.XR.Templates.AR.Editor.PlacedContentBundleBuilder.BuildForAndroidBat
 - Upload the big UnityFS file (~tens of MB), **not** the tiny `AssetBundles/iOS/iOS` catalog (~KB).
 - Never upload an Android bundle into the iOS admin field (or reverse).
 - Local filename does **not** matter after upload — storage is a MinIO GUID.
-### 3.5 Export Unity as a Library (player)
+### 3.6 Export Unity as a Library (player)
 
 **Menus**
 
@@ -460,6 +491,7 @@ Unity menu: **AR Test → Check Unity AR versions (bundle vs UaaL)**.
 | Android: `unity.androidSdkPath` missing | Incomplete gradle.properties merge | Re-run `integrate-unity-android.sh` |
 | `OpenFromNative` no effect | Host not ready | Bootstrap + native retry (already in hosts); check logs |
 | JSON path with `\/` | Escaped slashes | Hosts unescape; prefer `NSJSONWritingWithoutEscapingSlashes` on iOS |
+| iOS: white quad, `Cannot read file` / `man_with_transparent.mov` | ProRes packed in the AssetBundle | Use `walking_man_device.mov` (HEVC with Alpha, transcode off); rebuild + re-upload iOS bundle |
 
 ---
 

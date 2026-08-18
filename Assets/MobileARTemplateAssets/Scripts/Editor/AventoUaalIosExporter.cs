@@ -129,12 +129,7 @@ namespace UnityEngine.XR.Templates.AR.Editor
 
             Directory.CreateDirectory(path);
 
-            var scenePaths = new List<string>();
-            foreach (var scene in EditorBuildSettings.scenes)
-            {
-                if (scene.enabled && !string.IsNullOrEmpty(scene.path))
-                    scenePaths.Add(scene.path);
-            }
+            var scenePaths = CollectExistingEnabledScenes();
 
             if (scenePaths.Count == 0)
             {
@@ -167,6 +162,23 @@ namespace UnityEngine.XR.Templates.AR.Editor
             WriteChecklistBesideExport(path);
             Debug.Log($"[Avento UaaL] Export succeeded: {path}");
             return true;
+        }
+
+        static List<string> CollectExistingEnabledScenes()
+        {
+            var scenePaths = new List<string>();
+            foreach (var scene in EditorBuildSettings.scenes)
+            {
+                if (!scene.enabled || string.IsNullOrEmpty(scene.path))
+                    continue;
+                if (!File.Exists(scene.path))
+                {
+                    Debug.LogWarning($"[Avento UaaL] Skipping missing scene: {scene.path}");
+                    continue;
+                }
+                scenePaths.Add(scene.path);
+            }
+            return scenePaths;
         }
 
         static void WriteChecklistBesideExport(string exportPath)

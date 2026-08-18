@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.5.6f1
-CRC: 27924134
+CRC: 183985417
 HashAppended: 0
 AssetBundleManifest:
   AssetBundleInfos:
     Info_0:
-      Name: placedcontent
+      Name: art-galary
       Dependencies: {}

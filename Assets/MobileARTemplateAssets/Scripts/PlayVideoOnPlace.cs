@@ -30,6 +30,19 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         VideoClip m_VideoClip;
 
+        [Header("Editor / Simulator fallbacks")]
+        [Tooltip(
+            "Optional. Used only in Editor / macOS Simulator (RenderTexture path). " +
+            "Animation Compression / QT RLE alpha that plays in Sim but is not the device clip.")]
+        [SerializeField]
+        VideoClip m_EditorFallbackClip;
+
+        [Tooltip(
+            "Optional opaque H.264 used in Editor / Simulator when the alpha fallback is missing. " +
+            "Device always uses Video Clip (walking_man_device HEVC-with-alpha; do not ship ProRes).")]
+        [SerializeField]
+        VideoClip m_EditorOpaqueFallbackClip;
+
         [SerializeField]
         string m_TexturePropertyName = "_BaseMap";
 
@@ -106,8 +119,30 @@ namespace UnityEngine.XR.Templates.AR
         bool m_HasBaseWorldY;
         bool m_ApproachActive;
 
+        /// <summary>
+        /// Editor / OSX Simulator: RenderTexture + optional fallback clips.
+        /// iOS / Android: MaterialOverride + <see cref="m_VideoClip"/> (HEVC-with-alpha
+        /// MOV that AVFoundation can decode). Do not ship Apple ProRes in the AssetBundle.
+        /// </summary>
         static bool UseRenderTexturePath =>
             Application.isEditor || Application.platform == RuntimePlatform.OSXPlayer;
+
+        /// <summary>
+        /// Device → authored alpha clip. Editor/Sim → editor fallbacks when assigned
+        /// (same split as the working “man on place on iphone” setup).
+        /// </summary>
+        VideoClip ResolveActiveClip()
+        {
+            if (UseRenderTexturePath)
+            {
+                if (m_EditorFallbackClip != null)
+                    return m_EditorFallbackClip;
+                if (m_EditorOpaqueFallbackClip != null)
+                    return m_EditorOpaqueFallbackClip;
+            }
+
+            return m_VideoClip;
+        }
 
         void Awake()
         {
@@ -195,13 +230,37 @@ namespace UnityEngine.XR.Templates.AR
         }
 
         /// <summary>Re-fit / reconfigure after Instantiate or clip change.</summary>
+        /// <summary>
+        /// After parenting/scale, re-fit only — avoid Stop/Prepare again (breaks iOS VideoClip).
+        /// </summary>
+        public void RefreshFitOnly()
+        {
+            if (!m_HasBaseScale || m_BaseLocalScale == Vector3.zero)
+                CaptureBaseScale();
+
+            if (m_VideoPlayer != null && m_VideoPlayer.isPrepared)
+                ApplyFitFromPreparedSource(m_VideoPlayer);
+            else
+                EnsureFitRoutine();
+
+            ApplyFaceCameraOption();
+            BeginApproachIfEnabled();
+        }
+
         public void Refresh()
         {
-            m_Configured = false;
             // Keep the first authored base scale — do not capture a post-fit scale.
             if (!m_HasBaseScale || m_BaseLocalScale == Vector3.zero)
                 CaptureBaseScale();
 
+            if (m_VideoPlayer != null)
+            {
+                if (m_VideoPlayer.isPlaying || m_VideoPlayer.isPrepared)
+                    m_VideoPlayer.Stop();
+                m_VideoPlayer.clip = null;
+            }
+
+            m_Configured = false;
             ConfigurePlayer();
             EnsureFitRoutine();
             ApplyFaceCameraOption();
@@ -367,7 +426,8 @@ namespace UnityEngine.XR.Templates.AR
             if (m_Renderer == null)
                 m_Renderer = GetComponent<MeshRenderer>();
 
-            if (m_VideoClip == null || m_VideoPlayer == null || m_Renderer == null)
+            var activeClip = ResolveActiveClip();
+            if (activeClip == null || m_VideoPlayer == null || m_Renderer == null)
             {
                 Debug.LogWarning("[VideoSprite] Missing VideoClip, VideoPlayer, or MeshRenderer.", this);
                 return;
@@ -376,6 +436,7 @@ namespace UnityEngine.XR.Templates.AR
             if (!m_HasBaseScale)
                 CaptureBaseScale();
 
+            // Instance material once so MaterialOverride / RT write the same material the shader uses.
             var material = m_Renderer.material;
             ApplyFlip(material);
 
@@ -383,45 +444,65 @@ namespace UnityEngine.XR.Templates.AR
             m_VideoPlayer.waitForFirstFrame = true;
             m_VideoPlayer.isLooping = true;
             m_VideoPlayer.skipOnDrop = true;
-            m_VideoPlayer.clip = m_VideoClip;
+            m_VideoPlayer.source = VideoSource.VideoClip;
+            m_VideoPlayer.clip = activeClip;
             // Quad is resized to the pixel aspect; texture should fill that quad.
             m_VideoPlayer.aspectRatio = VideoAspectRatio.Stretch;
 
-            EnsureAudioSource();
-            if (m_PlayAudio && m_AudioSource != null)
+            if (!UseRenderTexturePath &&
+                activeClip.originalPath != null &&
+                activeClip.originalPath.IndexOf("man_with_transparent.mov", System.StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
-                m_VideoPlayer.controlledAudioTrackCount = 1;
-                m_VideoPlayer.EnableAudioTrack(0, true);
-                m_VideoPlayer.SetTargetAudioSource(0, m_AudioSource);
-            }
-            else
-            {
-                m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+                Debug.LogError(
+                    "[VideoSprite] Device clip is Apple ProRes (man_with_transparent.mov). " +
+                    "iOS VideoPlayer cannot decode it (white quad). Assign walking_man_device.mov " +
+                    "(HEVC with Alpha, transcoding off) and rebuild the iOS AssetBundle.",
+                    this);
             }
 
+            // Match the working iPhone path: never attach audio on the video sprite.
+            // Enabling a track (even when importAudio is 0 but audioTrackCount reports 1)
+            // can make Prepare fail on device with "cannot play clip".
+            m_VideoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+
             // Best-effort early fit from clip metadata (often 0 until Prepare on some platforms).
-            TryFitFromClipMetadata();
+            TryFitFromClipMetadata(activeClip);
 
             if (UseRenderTexturePath)
             {
-                EnsureRenderTexture();
+                EnsureRenderTexture(activeClip);
                 ClearRenderTexture(m_RenderTexture);
                 m_VideoPlayer.renderMode = VideoRenderMode.RenderTexture;
                 m_VideoPlayer.targetTexture = m_RenderTexture;
+                m_VideoPlayer.targetMaterialRenderer = null;
                 ApplyTexture(material, m_RenderTexture);
+                Debug.Log(
+                    $"[VideoSprite] RenderTexture path (Editor/Sim) clip='{activeClip.name}'.",
+                    this);
             }
             else
             {
+                // Device: VideoPlayer writes frames into _BaseMap on this renderer.
                 m_VideoPlayer.renderMode = VideoRenderMode.MaterialOverride;
+                m_VideoPlayer.targetTexture = null;
                 m_VideoPlayer.targetMaterialRenderer = m_Renderer;
                 m_VideoPlayer.targetMaterialProperty = m_TexturePropertyName;
+                Debug.Log(
+                    $"[VideoSprite] MaterialOverride path (Device) clip='{activeClip.name}' " +
+                    $"prop={m_TexturePropertyName} renderer={m_Renderer.name}.",
+                    this);
             }
 
             ApplyOpacity(material);
             m_Renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_Renderer.receiveShadows = false;
             m_Configured = true;
+
+            Debug.Log(
+                $"[VideoSprite] configured clip='{activeClip.name}' " +
+                $"{activeClip.width}x{activeClip.height} " +
+                $"path='{activeClip.originalPath}' audioTracks={activeClip.audioTrackCount}",
+                this);
         }
 
         void EnsureFitRoutine()
@@ -457,10 +538,15 @@ namespace UnityEngine.XR.Templates.AR
 
         bool TryFitFromClipMetadata()
         {
-            if (m_VideoClip == null)
+            return TryFitFromClipMetadata(ResolveActiveClip());
+        }
+
+        bool TryFitFromClipMetadata(VideoClip clip)
+        {
+            if (clip == null)
                 return false;
-            var w = (int)m_VideoClip.width;
-            var h = (int)m_VideoClip.height;
+            var w = (int)clip.width;
+            var h = (int)clip.height;
             if (w <= 0 || h <= 0)
                 return false;
             FitQuadToVideoAspect(w, h);
@@ -561,24 +647,24 @@ namespace UnityEngine.XR.Templates.AR
             scale.z = m_BaseLocalScale.z;
             transform.localScale = scale;
 
-            if (UseRenderTexturePath && m_VideoClip != null)
-                EnsureRenderTexture(width, height);
+            if (UseRenderTexturePath && ResolveActiveClip() != null)
+                EnsureRenderTexture(ResolveActiveClip(), width, height);
         }
 
-        void EnsureRenderTexture()
+        void EnsureRenderTexture(VideoClip clip)
         {
-            var width = m_VideoClip != null ? Mathf.Max(2, (int)m_VideoClip.width) : 2;
-            var height = m_VideoClip != null ? Mathf.Max(2, (int)m_VideoClip.height) : 2;
+            var width = clip != null ? Mathf.Max(2, (int)clip.width) : 2;
+            var height = clip != null ? Mathf.Max(2, (int)clip.height) : 2;
             if (width <= 2 || height <= 2)
             {
                 width = 960;
                 height = 540;
             }
 
-            EnsureRenderTexture(width, height);
+            EnsureRenderTexture(clip, width, height);
         }
 
-        void EnsureRenderTexture(int width, int height)
+        void EnsureRenderTexture(VideoClip clip, int width, int height)
         {
             width = Mathf.Max(2, width);
             height = Mathf.Max(2, height);
@@ -677,6 +763,20 @@ namespace UnityEngine.XR.Templates.AR
         void OnPrepareCompleted(VideoPlayer source)
         {
             ApplyFitFromPreparedSource(source);
+            // RT path only: re-bind target texture after prepare. MaterialOverride must
+            // own _BaseMap itself — do not ApplyTexture(source.texture) on device.
+            if (UseRenderTexturePath && m_Renderer != null && m_RenderTexture != null)
+            {
+                if (m_VideoPlayer != null)
+                    m_VideoPlayer.targetTexture = m_RenderTexture;
+                ApplyTexture(m_Renderer.material, m_RenderTexture);
+                ApplyOpacity(m_Renderer.material);
+            }
+            else if (m_Renderer != null)
+            {
+                ApplyOpacity(m_Renderer.material);
+            }
+
             if (m_PlayWhenReady && isActiveAndEnabled)
                 StartPlayback();
         }
@@ -688,6 +788,10 @@ namespace UnityEngine.XR.Templates.AR
             if (m_Renderer != null)
                 ApplyOpacity(m_Renderer.material);
             BeginApproachIfEnabled();
+            Debug.Log(
+                $"[VideoSprite] started playing={source.isPlaying} " +
+                $"{source.width}x{source.height} mode={source.renderMode}",
+                this);
         }
 
         void StartPlayback()
@@ -700,7 +804,14 @@ namespace UnityEngine.XR.Templates.AR
 
         void OnVideoError(VideoPlayer source, string message)
         {
-            Debug.LogError($"[VideoSprite] VideoPlayer error: {message}", this);
+            var clip = source != null && source.clip != null ? source.clip : ResolveActiveClip();
+            var path = clip != null ? clip.originalPath : "(null clip)";
+            Debug.LogError(
+                $"[VideoSprite] VideoPlayer error: {message} (clipPath='{path}' " +
+                $"mode={source?.renderMode} materialProp={m_TexturePropertyName}). " +
+                "iOS cannot decode Apple ProRes. Device clip must be HEVC-with-alpha " +
+                "(Assets/Videos/walking_man_device.mov, transcoding off) packed in the AssetBundle.",
+                this);
         }
     }
 }

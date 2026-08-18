@@ -245,6 +245,11 @@ namespace UnityEngine.XR.Templates.AR
 
         void DismissSurfaceFindingUi()
         {
+            // Do not hide Scan Surfaces until PlacedContent is actually on a plane.
+            var placer = FindAnyObjectByType<TapToPlaceOnAnchor>();
+            if (placer == null || placer.PlacementCount <= 0)
+                return;
+
             var goals = FindObjectsByType<GoalManager>(FindObjectsInactive.Include);
             for (var i = 0; i < goals.Length; i++)
             {

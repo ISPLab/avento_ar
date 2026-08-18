@@ -180,13 +180,18 @@ namespace UnityEngine.XR.Templates.AR
         bool m_AllGoalsFinished;
         int m_SurfacesTapped;
         int m_CurrentGoalIndex = 0;
+        bool m_HoldFindSurfaces;
 
         void Update()
         {
             if (m_AllGoalsFinished)
                 return;
 
-            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame && (m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces || m_CurrentGoal.CurrentGoal == OnboardingGoals.Hints || m_CurrentGoal.CurrentGoal == OnboardingGoals.Scale))
+            // Keep Scan Surfaces visible until TapToPlace dismisses coaching after a real place.
+            if (m_HoldFindSurfaces || m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces)
+                return;
+
+            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame && (m_CurrentGoal.CurrentGoal == OnboardingGoals.Hints || m_CurrentGoal.CurrentGoal == OnboardingGoals.Scale))
             {
                 if (m_CurrentCoroutine != null)
                 {
@@ -231,7 +236,8 @@ namespace UnityEngine.XR.Templates.AR
         {
             if (m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces)
             {
-                m_CurrentCoroutine = StartCoroutine(WaitUntilNextCard(5f));
+                // Stay on Scan Surfaces until content is placed (no 5s auto-advance).
+                return;
             }
             else if (m_CurrentGoal.CurrentGoal == OnboardingGoals.Hints)
             {
@@ -264,10 +270,49 @@ namespace UnityEngine.XR.Templates.AR
                 yield break;
             }
 
+            if (m_HoldFindSurfaces && m_CurrentGoal.CurrentGoal == OnboardingGoals.FindSurfaces)
+            {
+                m_CurrentCoroutine = null;
+                yield break;
+            }
+
             if (Pointer.current == null || !Pointer.current.press.wasPressedThisFrame)
             {
                 m_CurrentCoroutine = null;
                 CompleteGoal();
+            }
+        }
+
+        /// <summary>
+        /// Keep the Scan Surfaces card visible until automatic placement succeeds.
+        /// </summary>
+        public void HoldScanSurfacesCoaching(bool hold)
+        {
+            m_HoldFindSurfaces = hold;
+            if (!hold)
+                return;
+
+            if (m_CurrentCoroutine != null)
+            {
+                StopCoroutine(m_CurrentCoroutine);
+                m_CurrentCoroutine = null;
+            }
+
+            m_AllGoalsFinished = false;
+            m_CurrentGoal = new Goal(OnboardingGoals.FindSurfaces);
+            m_CurrentGoalIndex = 0;
+
+            if (m_GreetingPrompt != null)
+                m_GreetingPrompt.SetActive(false);
+
+            if (m_StepList == null || m_StepList.Count == 0)
+                return;
+
+            for (var i = 0; i < m_StepList.Count; i++)
+            {
+                if (m_StepList[i]?.stepObject == null)
+                    continue;
+                m_StepList[i].stepObject.SetActive(i == 0);
             }
         }
 
@@ -310,6 +355,7 @@ namespace UnityEngine.XR.Templates.AR
                 m_OnboardingGoals.Clear();
 
             m_AllGoalsFinished = true;
+            m_HoldFindSurfaces = false;
             m_CurrentGoalIndex = m_StepList != null ? m_StepList.Count : 0;
         }
 

@@ -31,6 +31,13 @@ namespace UnityEngine.XR.Templates.AR
 
         public static AventoUnityHost Instance => s_Instance;
 
+        public bool AutoStartTessa { get; private set; }
+        public string AutoStartTessaPrompt { get; private set; } = "";
+        public string SessionTitle { get; private set; } = "Unity AR";
+        public string SessionLanguage { get; private set; } = "";
+
+        Coroutine m_SceneTessaRoutine;
+
         public static Rect ExitChromeImguiRect()
         {
             var x = (Screen.width - ExitChromeSize) * 0.5f;
@@ -89,7 +96,8 @@ namespace UnityEngine.XR.Templates.AR
         /// <summary>
         /// Called from native via UnitySendMessage("AventoUnityHost", "OpenFromNative", json).
         /// JSON: { "bundlePath", "assetName", "bundleFileName", "scale", "title",
-        ///         "heading", "automaticScenePlacement", "autoPlaceDistanceMeters" }
+        ///         "heading", "automaticScenePlacement", "autoPlaceDistanceMeters",
+        ///         "autoStartTessa", "autoStartTessaPrompt", "language" }
         /// </summary>
         [Preserve]
         public void OpenFromNative(string json)
@@ -105,6 +113,10 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             var opts = ParseOpenOptions(json);
+            AutoStartTessa = opts.autoStartTessa;
+            AutoStartTessaPrompt = opts.autoStartTessaPrompt ?? "";
+            SessionTitle = string.IsNullOrWhiteSpace(opts.title) ? "Unity AR" : opts.title;
+            SessionLanguage = opts.language ?? "";
             if (!string.IsNullOrWhiteSpace(opts.bundlePath) &&
                 m_OpenRoutine != null &&
                 string.Equals(m_OpenBundlePath, opts.bundlePath, StringComparison.Ordinal) &&
@@ -115,6 +127,19 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             m_OpenBundlePath = opts.bundlePath;
+            AventoInteractionDirector.ResetSession();
+            if (m_SceneTessaRoutine != null)
+            {
+                StopCoroutine(m_SceneTessaRoutine);
+                m_SceneTessaRoutine = null;
+            }
+
+            Debug.Log(
+                $"[AventoUnityHost] Open options autoStartTessa={opts.autoStartTessa} " +
+                $"autoPlace={opts.automaticScenePlacement} title='{opts.title}' " +
+                $"promptChars={(opts.autoStartTessaPrompt ?? "").Length}",
+                this);
+
             if (m_OpenRoutine != null)
                 StopCoroutine(m_OpenRoutine);
             m_OpenRoutine = StartCoroutine(OpenRoutine(json));
@@ -277,7 +302,68 @@ namespace UnityEngine.XR.Templates.AR
                 yield break;
             }
 
+            if (GetComponent<AventoSceneTessa>() == null)
+            {
+                var fallback = gameObject.AddComponent<AventoSceneTessa>();
+                fallback.SetAsHostFallback(1.1f);
+            }
+            else
+            {
+                GetComponent<AventoSceneTessa>().SetAsHostFallback(1.1f);
+            }
+
+            // Host-owned kickoff (more reliable than only AventoSceneTessa subscription).
+            AventoInteractionDirector.ContentPlaced -= OnHostContentPlaced;
+            AventoInteractionDirector.ContentPlaced += OnHostContentPlaced;
+
             NotifyNativeReady(opts);
+        }
+
+        void OnHostContentPlaced(GameObject instance)
+        {
+            if (instance == null)
+                return;
+
+            Debug.Log(
+                $"[AventoUnityHost] ContentPlaced autoStartTessa={AutoStartTessa} " +
+                $"instance={instance.name}",
+                this);
+
+            if (!AutoStartTessa)
+                return;
+
+            if (m_SceneTessaRoutine != null)
+                StopCoroutine(m_SceneTessaRoutine);
+            m_SceneTessaRoutine = StartCoroutine(SceneTessaAfterPlaceRoutine());
+        }
+
+        IEnumerator SceneTessaAfterPlaceRoutine()
+        {
+            yield return new WaitForSecondsRealtime(0.7f);
+            FireSceneStartToNative();
+            m_SceneTessaRoutine = null;
+        }
+
+        public void FireSceneStartToNative()
+        {
+            if (!AventoInteractionDirector.TryMarkSceneStartSent())
+            {
+                Debug.Log("[AventoUnityHost] scene_start already sent — skip", this);
+                return;
+            }
+
+            var json = AventoInteractJson.Build(
+                "scene_start",
+                "scene",
+                SessionTitle,
+                AutoStartTessaPrompt,
+                null,
+                AventoSpeechMode.Tessa,
+                "",
+                AventoSsmlGenderHint.Unspecified);
+
+            Debug.Log($"[AventoUnityHost] scene_start → native ({json.Length} chars)", this);
+            AventoUnityNative.NotifyObjectInteract(json);
         }
 
         void EnsureBundleLoader()
@@ -309,10 +395,21 @@ namespace UnityEngine.XR.Templates.AR
                 m_OpenRoutine = null;
             }
 
+            if (m_SceneTessaRoutine != null)
+            {
+                StopCoroutine(m_SceneTessaRoutine);
+                m_SceneTessaRoutine = null;
+            }
+
+            AventoInteractionDirector.ContentPlaced -= OnHostContentPlaced;
+
             var count = m_TapToPlace != null ? m_TapToPlace.PlacementCount : 0;
             m_TapToPlace?.ClearAllPlacements();
             m_BundleLoader?.Unload();
             m_OpenBundlePath = null;
+            AutoStartTessa = false;
+            AutoStartTessaPrompt = "";
+            AventoInteractionDirector.ResetSession();
 
             var payload =
                 "{\"reason\":\"" + Escape(reason) + "\",\"placementsCount\":" + count + "}";
@@ -325,6 +422,7 @@ namespace UnityEngine.XR.Templates.AR
                 "{\"ok\":true,\"contentReady\":true,\"assetName\":\"" + Escape(opts.assetName) +
                 "\",\"title\":\"" + Escape(opts.title) +
                 "\",\"automaticScenePlacement\":" + (opts.automaticScenePlacement ? "true" : "false") +
+                ",\"autoStartTessa\":" + (opts.autoStartTessa ? "true" : "false") +
                 "}";
             AventoUnityNative.NotifyReady(payload);
         }
@@ -363,6 +461,9 @@ namespace UnityEngine.XR.Templates.AR
                 heading = 0f,
                 automaticScenePlacement = false,
                 autoPlaceDistanceMeters = 2f,
+                autoStartTessa = false,
+                autoStartTessaPrompt = string.Empty,
+                language = string.Empty,
             };
 
             if (string.IsNullOrWhiteSpace(json))
@@ -387,8 +488,21 @@ namespace UnityEngine.XR.Templates.AR
                         opts.scale = dto.scale;
                     opts.heading = dto.heading;
                     opts.automaticScenePlacement = dto.automaticScenePlacement;
+                    if (ExtractJsonBool(json, "automaticScenePlacement"))
+                        opts.automaticScenePlacement = true;
                     if (dto.autoPlaceDistanceMeters > 0f)
                         opts.autoPlaceDistanceMeters = dto.autoPlaceDistanceMeters;
+                    opts.autoStartTessa = dto.autoStartTessa;
+                    if (dto.autoStartTessaPrompt != null)
+                        opts.autoStartTessaPrompt = dto.autoStartTessaPrompt;
+                    if (dto.language != null)
+                        opts.language = dto.language.Trim();
+                    // JsonUtility can miss bools when the payload is large — overlay from raw JSON.
+                    if (ExtractJsonBool(json, "autoStartTessa"))
+                        opts.autoStartTessa = true;
+                    var promptOverlay = ExtractJsonString(json, "autoStartTessaPrompt");
+                    if (!string.IsNullOrEmpty(promptOverlay))
+                        opts.autoStartTessaPrompt = promptOverlay;
                     return opts;
                 }
             }
@@ -410,6 +524,9 @@ namespace UnityEngine.XR.Templates.AR
             var dist = ExtractJsonFloat(json, "autoPlaceDistanceMeters");
             if (dist > 0f)
                 opts.autoPlaceDistanceMeters = dist;
+            opts.autoStartTessa = ExtractJsonBool(json, "autoStartTessa");
+            opts.autoStartTessaPrompt = ExtractJsonString(json, "autoStartTessaPrompt") ?? opts.autoStartTessaPrompt;
+            opts.language = ExtractJsonString(json, "language") ?? opts.language;
             return opts;
         }
 
@@ -585,6 +702,9 @@ namespace UnityEngine.XR.Templates.AR
             public float heading;
             public bool automaticScenePlacement;
             public float autoPlaceDistanceMeters;
+            public bool autoStartTessa;
+            public string autoStartTessaPrompt;
+            public string language;
         }
 
         struct OpenOptions
@@ -597,6 +717,9 @@ namespace UnityEngine.XR.Templates.AR
             public float heading;
             public bool automaticScenePlacement;
             public float autoPlaceDistanceMeters;
+            public bool autoStartTessa;
+            public string autoStartTessaPrompt;
+            public string language;
         }
     }
 }

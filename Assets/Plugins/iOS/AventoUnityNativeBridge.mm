@@ -39,6 +39,11 @@ void AventoUnity_OnError(const char *json)
     AventoUnityPost(@"AventoUnityOnError", json);
 }
 
+void AventoUnity_OnObjectInteract(const char *json)
+{
+    AventoUnityPost(@"AventoUnityOnObjectInteract", json);
+}
+
 #ifdef __cplusplus
 }
 #endif

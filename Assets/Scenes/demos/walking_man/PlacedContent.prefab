@@ -1,0 +1,291 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1509298366052246855
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5563579345891118738}
+  - component: {fileID: 3359819307929401212}
+  - component: {fileID: 5805872876324393966}
+  - component: {fileID: 6641972361388045292}
+  - component: {fileID: 8788744559802564609}
+  - component: {fileID: 4975172285093594341}
+  - component: {fileID: 845735954327467703}
+  - component: {fileID: 845735954327467702}
+  m_Layer: 0
+  m_Name: feature_video_walking_move_proximity_tessa
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5563579345891118738
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.672, z: 14.78}
+  m_LocalScale: {x: 1.8, y: 1.8, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4195135945213927492}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!33 &3359819307929401212
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Mesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!23 &5805872876324393966
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 0
+  m_ReflectionProbeUsage: 0
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 4aa88e56b66645e4a6f802c0bc7e9ced, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!328 &6641972361388045292
+VideoPlayer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Enabled: 1
+  m_VideoClip: {fileID: 32900000, guid: 7ee057f60c3ff4e25a1738bc7ccfa565, type: 3}
+  m_TargetCameraAlpha: 1
+  m_TargetCamera3DLayout: 0
+  m_TargetCamera: {fileID: 0}
+  m_TargetTexture: {fileID: 0}
+  m_TimeReference: 0
+  m_TargetMaterialRenderer: {fileID: 5805872876324393966}
+  m_TargetMaterialProperty: _BaseMap
+  m_RenderMode: 3
+  m_AspectRatio: 3
+  m_DataSource: 0
+  m_TimeUpdateMode: 2
+  m_PlaybackSpeed: 1
+  m_AudioOutputMode: 0
+  m_TargetAudioSources:
+  - {fileID: 0}
+  m_DirectAudioVolumes:
+  - 1
+  m_Url: 
+  m_EnabledAudioTracks: 01
+  m_DirectAudioMutes: 00
+  m_ControlledAudioTrackCount: 1
+  m_PlayOnAwake: 0
+  m_SkipOnDrop: 1
+  m_Looping: 0
+  m_WaitForFirstFrame: 1
+  m_FrameReadyEventEnabled: 0
+  m_VideoShaders: []
+--- !u!114 &8788744559802564609
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_VideoClip: {fileID: 32900000, guid: 7ee057f60c3ff4e25a1738bc7ccfa565, type: 3}
+  m_EditorFallbackClip: {fileID: 0}
+  m_EditorOpaqueFallbackClip: {fileID: 0}
+  m_TexturePropertyName: _BaseMap
+  m_FlipVertical: 0
+  m_PlayAudio: 1
+  m_SpatialBlend: 1
+  m_FitQuadToAspect: 1
+  m_AspectFitMode: 1
+  m_Opacity: 1
+  m_FaceCamera: 1
+  m_MoveTowardCamera: 1
+  m_ApproachSpeedMetersPerSecond: 0.1
+  m_StopDistanceMeters: 1.2
+  m_MoveOnlyWhilePlaying: 1
+  m_WalkBobAmplitudeMeters: 0
+  m_WalkBobFrequency: 0
+--- !u!114 &4975172285093594341
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b08b6ad285a41cb8d1f83323925acb9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Camera: {fileID: 0}
+  m_RotateTowardCamera: 1
+  m_LockYAxis: 1
+  m_FlipToFaceCamera: 1
+--- !u!65 &845735954327467703
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &845735954327467702
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509298366052246855}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 047cef3d813014eecb3bf323b791586d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_ObjectId: feature_video_walking_move_proximity_tessa
+  m_DisplayName: Walking Man
+  m_Prompt: 
+  m_PromptByLanguage: []
+  m_SpeechMode: 1
+  m_TriggerMode: 2
+  m_ProximityRadiusMeters: 2.2
+  m_ProximityExitMeters: 3
+  m_FireOnce: 1
+  m_CooldownSeconds: 30
+  m_RequireLineOfSight: 0
+  m_RequireFacingUser: 0
+  m_VoiceNameOverride: 
+  m_SsmlGenderHint: 0
+--- !u!1 &4224059019901929895
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4195135945213927492}
+  - component: {fileID: 3350437129493550090}
+  m_Layer: 0
+  m_Name: PlacedContent
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4195135945213927492
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4224059019901929895}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.65843, y: -0, z: 54.53524}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 5563579345891118738}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3350437129493550090
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4224059019901929895}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 239d7424add64c8195dd012307a968be, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.XR.Templates.AR::UnityEngine.XR.Templates.AR.PanoramaSkyboxViewer
+  m_ContentMode: 1
+  m_PanoramaTexture: {fileID: 2800000, guid: dcab56e66f9ef4703b05b1b73fec0940, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: b351a035315724c3b8e6ec11d27040d9, type: 3}
+  m_Loop: 1
+  m_PlayAudio: 0
+  m_AutoPlay: 1
+  m_StereoLayout: 0
+  m_SkyboxMaterial: {fileID: 2100000, guid: 8fd1552128be4c65be23ff1e13ec0f54, type: 2}
+  m_DomeMaterialTemplate: {fileID: 2100000, guid: 9d567cc3e57042acad9f9781a4250bd2, type: 2}
+  m_HideSurfaceCoachingWhenActive: 1
+  m_LookControlMode: 1
+  m_HideArCameraBackground: 1
+  m_HideSimulationEnvironment: 1
+  m_DomeRadius: 50
+  m_LookSensitivity: 0.15
+  m_MinPitch: -89
+  m_MaxPitch: 89
+  m_LookTarget: {fileID: 0}
+  m_Exposure: 1
+  m_Opacity: 0.95
+  m_YawOffset: 0

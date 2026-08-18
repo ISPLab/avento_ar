@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -21,6 +22,17 @@ namespace UnityEngine.XR.Templates.AR
             TrackableType.PlaneWithinBounds |
             TrackableType.PlaneEstimated |
             TrackableType.FeaturePoint;
+
+        /// <summary>
+        /// Auto-place uses real plane hits (polygon + bounds). Feature points are excluded
+        /// so content does not spawn before a floor/table is scanned.
+        /// </summary>
+        const TrackableType k_AutoPlaceHitMask =
+            TrackableType.PlaneWithinPolygon |
+            TrackableType.PlaneWithinBounds;
+
+        const float k_AutoPlaceMinPlaneArea = 0.08f;
+        const float k_AutoPlaceMinCoachingSeconds = 0.4f;
 
         [SerializeField]
         ARRaycastManager m_RaycastManager;
@@ -68,6 +80,19 @@ namespace UnityEngine.XR.Templates.AR
         [SerializeField]
         bool m_ShowDebugHud = false;
 
+        [Header("Editor / XR Simulation")]
+        [Tooltip("If on, hide the in-scene PlacedContent preview in Play Mode (device-style). Leave off to preview the scene content.")]
+        [SerializeField]
+        bool m_HideSceneContentInEditor;
+
+        [Tooltip("If on, do not move the in-scene PlacedContent in front of the XR Simulation camera.")]
+        [SerializeField]
+        bool m_DoNotFrameEditorCameraOnSceneContent;
+
+        [Tooltip("How far in front of the simulation camera to put the scene content (meters). 0 = 3.5.")]
+        [SerializeField]
+        float m_EditorViewDistanceMeters = 3.5f;
+
         readonly List<Placement> m_Placements = new();
         bool m_Ready;
         bool m_HostOwnsPrefab;
@@ -85,6 +110,9 @@ namespace UnityEngine.XR.Templates.AR
         float m_AutoPlaceDistanceMeters = 2f;
         bool m_AutoPlaceDone;
         bool m_AutoPlaceInFlight;
+        float m_AutoPlaceArmedAt;
+        bool m_AutoPlaceCoachingArmed;
+        bool m_ScanCoachingDismissed;
 
         struct Placement
         {
@@ -113,6 +141,11 @@ namespace UnityEngine.XR.Templates.AR
 
         public int PlacementCount => m_Placements.Count;
 
+        bool HasPlacedContent() => m_Placements.Count > 0 || m_AutoPlaceDone || m_ScanCoachingDismissed;
+
+        bool ShouldShowScanCoaching() =>
+            !m_ScanCoachingDismissed && m_Placements.Count == 0 && !m_AutoPlaceDone;
+
         /// <summary>
         /// Inject a tap from native (UIKit) or IMGUI when Input System does not see touches in UaaL.
         /// Coordinates must be Unity screen space (origin bottom-left, pixels).
@@ -123,6 +156,19 @@ namespace UnityEngine.XR.Templates.AR
             m_TapCount++;
             m_Status = $"inject #{m_TapCount} @ {unityScreenPosition:F0}";
             Debug.Log($"[TapPlace] InjectTap #{m_TapCount} {unityScreenPosition}", this);
+
+            if (AventoInteractionDirector.TryHandleTap(unityScreenPosition))
+            {
+                m_Status = $"interact #{m_TapCount}";
+                Debug.Log($"[TapPlace] InjectTap consumed by interactable @ {unityScreenPosition}", this);
+                return;
+            }
+
+            if (m_AutomaticScenePlacement && !m_AutoPlaceDone)
+            {
+                m_Status = "auto: scanning — tap ignored until a surface is found";
+                return;
+            }
 
             if (!m_Ready)
             {
@@ -159,7 +205,7 @@ namespace UnityEngine.XR.Templates.AR
         }
 
         /// <summary>
-        /// Enable/disable automatic placement: on first horizontal plane, put content
+        /// Enable/disable automatic placement: wait for a scanned floor/table, then put content
         /// <paramref name="distanceMeters"/> in front of the phone on that surface (no tap).
         /// </summary>
         public void SetAutomaticScenePlacement(bool enabled, float distanceMeters = 2f)
@@ -168,10 +214,15 @@ namespace UnityEngine.XR.Templates.AR
             m_AutoPlaceDistanceMeters = distanceMeters > 0.1f ? distanceMeters : 2f;
             m_AutoPlaceDone = false;
             m_AutoPlaceInFlight = false;
+            m_AutoPlaceArmedAt = Time.realtimeSinceStartup;
+            m_AutoPlaceCoachingArmed = false;
+            m_ScanCoachingDismissed = false;
             m_Status = enabled
                 ? $"auto-place ON ({m_AutoPlaceDistanceMeters:0.##}m) — scan floor/table"
                 : "auto-place OFF — tap to place";
             Debug.Log($"[TapPlace] AutomaticScenePlacement={enabled} distance={m_AutoPlaceDistanceMeters}", this);
+            if (enabled)
+                ArmScanCoaching();
         }
 
         void Awake()
@@ -215,6 +266,10 @@ namespace UnityEngine.XR.Templates.AR
         void Start()
         {
             StartCoroutine(InitializeContentPrefab());
+            ArmScanCoaching();
+#if UNITY_EDITOR
+            StartCoroutine(PresentSceneContentInEditor());
+#endif
         }
 
         void OnGUI()
@@ -232,6 +287,9 @@ namespace UnityEngine.XR.Templates.AR
                     m_LastInputSource = "imgui";
                 }
             }
+
+            if (ShouldShowScanCoaching())
+                DrawScanSurfacesCoaching();
 
             if (!m_ShowDebugHud)
                 return;
@@ -272,9 +330,9 @@ namespace UnityEngine.XR.Templates.AR
             ResolveManagers();
 
 #if UNITY_EDITOR
-            // Editor / XR Simulation: no native download. Use Resources or the scene template.
+            // Editor / XR Simulation: prefer the in-scene instance, then Resources.
             if (m_ContentPrefab == null)
-                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+                m_ContentPrefab = FindSceneTemplatePrefab() ?? FindContentPrefabByName();
             m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
             m_Status = m_Ready
                 ? $"ready prefab={m_ContentPrefab.name}"
@@ -323,7 +381,7 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             if (m_ContentPrefab == null && !hostPresent && !m_HostOwnsPrefab)
-                m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+                m_ContentPrefab = FindSceneTemplatePrefab() ?? FindContentPrefabByName();
 #endif
 
             m_Ready = m_RaycastManager != null && m_AnchorManager != null && m_ContentPrefab != null;
@@ -374,11 +432,11 @@ namespace UnityEngine.XR.Templates.AR
 #if UNITY_EDITOR
             if (m_ContentPrefab != null)
                 return;
-            m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+            m_ContentPrefab = FindSceneTemplatePrefab() ?? FindContentPrefabByName();
 #else
             if (m_HostOwnsPrefab || AventoUnityHost.Instance != null)
                 return;
-            m_ContentPrefab = FindContentPrefabByName() ?? FindSceneTemplatePrefab();
+            m_ContentPrefab = FindSceneTemplatePrefab() ?? FindContentPrefabByName();
 #endif
         }
 
@@ -438,8 +496,12 @@ namespace UnityEngine.XR.Templates.AR
             return null;
         }
 
-        void HideSceneTemplateIfPresent()
+        void HideSceneTemplateIfPresent(bool force = false)
         {
+#if UNITY_EDITOR
+            if (!force && !m_HideSceneContentInEditor)
+                return;
+#endif
             foreach (var candidate in Resources.FindObjectsOfTypeAll<Transform>())
             {
                 if (candidate == null || candidate.name != "PlacedContent")
@@ -453,10 +515,130 @@ namespace UnityEngine.XR.Templates.AR
             }
         }
 
+#if UNITY_EDITOR
+        IEnumerator PresentSceneContentInEditor()
+        {
+            // XR Simulation camera + environment scene load a few frames after Play.
+            Camera cam = null;
+            var until = Time.realtimeSinceStartup + 2.5f;
+            while (Time.realtimeSinceStartup < until)
+            {
+                cam = ResolveEditorViewCamera();
+                if (cam != null)
+                    break;
+                yield return null;
+            }
+
+            for (var i = 0; i < 8; i++)
+                yield return null;
+
+            cam = ResolveEditorViewCamera() ?? cam;
+
+            var template = FindSceneTemplatePrefab();
+            if (template == null)
+            {
+                var prefab = FindContentPrefabByName();
+                if (prefab != null)
+                {
+                    template = Instantiate(prefab);
+                    template.name = string.IsNullOrWhiteSpace(m_ContentPrefabName)
+                        ? "PlacedContent"
+                        : m_ContentPrefabName.Trim();
+                    Debug.Log(
+                        $"[TapPlace] Editor: instantiated '{template.name}' for XR Simulation preview.",
+                        this);
+                }
+            }
+
+            if (template == null)
+            {
+                Debug.LogWarning(
+                    "[TapPlace] Editor: no PlacedContent in the scene or Resources — XR Simulation is empty.",
+                    this);
+                yield break;
+            }
+
+            if (!template.activeSelf)
+            {
+                Debug.Log(
+                    $"[TapPlace] Editor: '{template.name}' is disabled in the scene, keeping it hidden.",
+                    this);
+                yield break;
+            }
+
+            if (m_DoNotFrameEditorCameraOnSceneContent)
+            {
+                Debug.Log(
+                    $"[TapPlace] Editor: leaving '{template.name}' at authored pose (do-not-frame is on).",
+                    this);
+                yield break;
+            }
+
+            PlaceTemplateInFrontOfEditorCamera(template, cam);
+        }
+
+        void PlaceTemplateInFrontOfEditorCamera(GameObject template, Camera cam)
+        {
+            if (cam == null)
+                cam = ResolveEditorViewCamera();
+            if (cam == null)
+            {
+                Debug.LogWarning(
+                    "[TapPlace] Editor: no XR Simulation camera yet — content stays at authored pose.",
+                    this);
+                return;
+            }
+
+            var bounds = EncapsulateRenderers(template);
+            var forward = cam.transform.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-4f)
+                forward = Vector3.forward;
+            forward.Normalize();
+
+            var distance = m_EditorViewDistanceMeters > 0.1f ? m_EditorViewDistanceMeters : 3.5f;
+            // Frame the visible mesh (children can sit 10m+ off the empty root).
+            var desiredCenter = cam.transform.position + forward * distance;
+            desiredCenter.y = Mathf.Max(0.05f, bounds.extents.y);
+            template.transform.position += desiredCenter - bounds.center;
+
+            var after = EncapsulateRenderers(template);
+            Debug.Log(
+                $"[TapPlace] Editor: showing '{template.name}' in XR Simulation " +
+                $"{distance:0.0}m ahead (visual {after.center}, size {after.size}).",
+                this);
+        }
+
+        Camera ResolveEditorViewCamera()
+        {
+            var origin = FindFirstObjectByType<XROrigin>();
+            if (origin != null && origin.Camera != null)
+                return origin.Camera;
+            return Camera.main;
+        }
+
+        static Bounds EncapsulateRenderers(GameObject root)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0)
+                return new Bounds(root.transform.position, Vector3.one);
+
+            var bounds = renderers[0].bounds;
+            for (var i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+            return bounds;
+        }
+#endif
+
         void Update()
         {
             if (m_PlaneManager != null)
                 m_PlaneCount = m_PlaneManager.trackables.count;
+
+            if (ShouldShowScanCoaching() && Time.frameCount % 30 == 0)
+                ArmScanCoaching(force: true);
+            else if (m_ScanCoachingDismissed && Time.frameCount % 30 == 0)
+                HideScanCoachingVisuals();
 
             if (m_AutomaticScenePlacement && !m_AutoPlaceDone && !m_AutoPlaceInFlight)
                 TryAutomaticPlacement();
@@ -467,6 +649,16 @@ namespace UnityEngine.XR.Templates.AR
             m_TapCount++;
             Debug.Log($"[TapPlace] Tap #{m_TapCount} at {screenPosition}", this);
             m_Status = $"tap #{m_TapCount} @ {screenPosition:F0}";
+
+            if (AventoInteractionDirector.TryHandleTap(screenPosition))
+            {
+                m_Status = $"interact #{m_TapCount}";
+                Debug.Log($"[TapPlace] Tap consumed by interactable @ {screenPosition}", this);
+                return;
+            }
+
+            if (m_AutomaticScenePlacement && !m_AutoPlaceDone)
+                return;
 
             if (!m_IgnoreUiBlocking && IsPointerOverUI(screenPosition))
             {
@@ -497,11 +689,22 @@ namespace UnityEngine.XR.Templates.AR
         void TryAutomaticPlacement()
         {
             if (!EnsureReadyForPlace())
-                return;
-
-            if (m_PlaneManager == null || m_PlaneManager.trackables.count == 0)
             {
-                m_Status = "auto: waiting for horizontal plane…";
+                m_Status = "auto: waiting for prefab…";
+                return;
+            }
+
+            ArmScanCoaching();
+
+            if (ARSession.state < ARSessionState.SessionTracking)
+            {
+                m_Status = $"auto: waiting for tracking ({ARSession.state})";
+                return;
+            }
+
+            if (Time.realtimeSinceStartup - m_AutoPlaceArmedAt < k_AutoPlaceMinCoachingSeconds)
+            {
+                m_Status = "auto: scan coaching…";
                 return;
             }
 
@@ -512,57 +715,59 @@ namespace UnityEngine.XR.Templates.AR
                 return;
             }
 
-            // 1) Screen-center ray — natural “in front of phone” hit on a detected plane.
+            if (m_PlaneManager == null || !HasUsableBottomPlane())
+            {
+                m_Status = $"auto: waiting for a floor/table (planes={m_PlaneCount})";
+                return;
+            }
+
+            // 1) Screen center — natural “in front of the phone” look.
             var screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-            if (m_RaycastManager.Raycast(screenCenter, s_Hits, k_PlaneHitMask) &&
-                IsHorizontalPlaneHit(s_Hits[0]))
-            {
-                m_LastInputSource = "auto-center";
-                m_Status = "auto: placing via screen-center hit";
-                PlaceAtHit(s_Hits[0], markAutoDone: true);
+            if (TryAutoPlaceFromScreenRay(screenCenter, cam, "auto-center"))
                 return;
-            }
 
-            // 2) Aim ~N meters ahead of the camera, then raycast down onto a horizontal plane.
-            var forward = cam.transform.forward;
-            var flat = Vector3.ProjectOnPlane(forward, Vector3.up);
-            if (flat.sqrMagnitude < 1e-4f)
-                flat = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.forward);
-            if (flat.sqrMagnitude < 1e-4f)
-                flat = Vector3.forward;
-            flat.Normalize();
-
-            var aim = cam.transform.position + flat * m_AutoPlaceDistanceMeters;
-            var from = aim + Vector3.up * 2.5f;
-            var screenFromWorld = cam.WorldToScreenPoint(from + Vector3.down * 0.1f);
-            // Prefer a downward AR ray via screen point above the aim (works with ARRaycastManager).
-            var probeScreen = new Vector2(screenFromWorld.x, screenFromWorld.y);
-            if (screenFromWorld.z > 0f &&
-                m_RaycastManager.Raycast(probeScreen, s_Hits, k_PlaneHitMask) &&
-                IsHorizontalPlaneHit(s_Hits[0]))
-            {
-                // Snap pose to aim XZ on the hit plane height so distance stays ~N meters.
-                var hitPose = s_Hits[0].pose;
-                var snapped = new Pose(
-                    new Vector3(aim.x, hitPose.position.y, aim.z),
-                    hitPose.rotation);
-                m_LastInputSource = "auto-forward";
-                m_Status = $"auto: placing {m_AutoPlaceDistanceMeters:0.##}m ahead";
-                PlaceAtPose(snapped, s_Hits[0].trackable as ARPlane, markAutoDone: true);
+            // 2) Slightly below center — floor is usually in the lower half of the view.
+            var screenLower = new Vector2(Screen.width * 0.5f, Screen.height * 0.32f);
+            if (TryAutoPlaceFromScreenRay(screenLower, cam, "auto-lower"))
                 return;
-            }
 
-            // 3) Fallback: closest horizontal plane center projected toward aim.
+            // 3) Floor exists but the view-center ray missed it (looking at the horizon).
+            if (TryAutoPlaceOnFloorInFront(cam))
+                return;
+
+            m_Status = "auto: floor found — point the camera at it";
+        }
+
+        bool TryAutoPlaceFromScreenRay(Vector2 screenPosition, Camera cam, string source)
+        {
+            if (m_RaycastManager == null)
+                return false;
+            if (!m_RaycastManager.Raycast(screenPosition, s_Hits, k_AutoPlaceHitMask))
+                return false;
+
+            var hit = s_Hits[0];
+            if (!IsUsableAutoPlaceHit(hit, cam))
+                return false;
+
+            m_LastInputSource = source;
+            m_Status = $"auto: placing via {source}";
+            PlaceAtPose(hit.pose, hit.trackable as ARPlane, markAutoDone: true);
+            return true;
+        }
+
+        bool TryAutoPlaceOnFloorInFront(Camera cam)
+        {
+            var pose = PoseInFrontOnPlane(cam, float.NaN);
             ARPlane best = null;
             var bestScore = float.MaxValue;
             foreach (var plane in m_PlaneManager.trackables)
             {
-                if (plane.alignment != PlaneAlignment.HorizontalUp &&
-                    plane.alignment != PlaneAlignment.HorizontalDown)
+                if (!IsUsableAutoPlacePlane(plane))
                     continue;
-                var center = plane.center;
-                var dx = center.x - aim.x;
-                var dz = center.z - aim.z;
+                if (plane.center.y >= cam.transform.position.y - 0.02f)
+                    continue;
+                var dx = plane.center.x - pose.position.x;
+                var dz = plane.center.z - pose.position.z;
                 var score = dx * dx + dz * dz;
                 if (score < bestScore)
                 {
@@ -572,17 +777,129 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             if (best == null)
+                return false;
+
+            pose = new Pose(
+                new Vector3(pose.position.x, best.center.y, pose.position.z),
+                pose.rotation);
+
+            m_LastInputSource = "auto-floor";
+            m_Status = "auto: placing on scanned floor";
+            PlaceAtPose(pose, best, markAutoDone: true);
+            return true;
+        }
+
+        Pose PoseInFrontOnPlane(Camera cam, float planeY)
+        {
+            var flat = FlattenCameraForward(cam);
+            var dist = m_AutoPlaceDistanceMeters > 0.1f ? m_AutoPlaceDistanceMeters : 2f;
+            var aim = cam.transform.position + flat * dist;
+            var y = float.IsNaN(planeY) ? aim.y : planeY;
+            return new Pose(new Vector3(aim.x, y, aim.z), Quaternion.identity);
+        }
+
+        static Vector3 FlattenCameraForward(Camera cam)
+        {
+            var flat = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+            if (flat.sqrMagnitude < 1e-4f)
+                flat = Vector3.forward;
+            return flat.normalized;
+        }
+
+        bool HasUsableBottomPlane()
+        {
+            if (m_PlaneManager == null)
+                return false;
+
+            foreach (var plane in m_PlaneManager.trackables)
             {
-                m_Status = "auto: waiting for horizontal plane…";
-                return;
+                if (IsUsableAutoPlacePlane(plane))
+                    return true;
             }
 
-            var pose = new Pose(
-                new Vector3(aim.x, best.center.y, aim.z),
-                Quaternion.LookRotation(flat, Vector3.up));
-            m_LastInputSource = "auto-plane";
-            m_Status = $"auto: placing on plane {best.trackableId}";
-            PlaceAtPose(pose, best, markAutoDone: true);
+            return false;
+        }
+
+        static bool IsUsableAutoPlacePlane(ARPlane plane)
+        {
+            if (plane == null)
+                return false;
+            if (plane.trackingState != TrackingState.Tracking &&
+                plane.trackingState != TrackingState.Limited)
+                return false;
+            if (plane.alignment != PlaneAlignment.HorizontalUp)
+                return false;
+            return plane.size.x * plane.size.y >= k_AutoPlaceMinPlaneArea;
+        }
+
+        static bool IsUsableAutoPlaceHit(ARRaycastHit hit, Camera cam)
+        {
+            if (hit.trackable is not ARPlane plane || !IsUsableAutoPlacePlane(plane))
+                return false;
+
+            if (hit.pose.position.y >= cam.transform.position.y - 0.02f)
+                return false;
+
+            var vp = cam.WorldToViewportPoint(hit.pose.position);
+            if (vp.z <= 0f)
+                return false;
+
+            var up = hit.pose.up;
+            return Vector3.Dot(up, Vector3.up) > 0.55f;
+        }
+
+        void ArmScanCoaching(bool force = false)
+        {
+            if (!ShouldShowScanCoaching())
+                return;
+            if (m_AutoPlaceCoachingArmed && !force)
+                return;
+            m_AutoPlaceCoachingArmed = true;
+
+            var goals = FindObjectsByType<GoalManager>(FindObjectsInactive.Include);
+            for (var i = 0; i < goals.Length; i++)
+            {
+                if (goals[i] != null)
+                    goals[i].HoldScanSurfacesCoaching(true);
+            }
+
+            var menus = FindObjectsByType<ARTemplateMenuManager>(FindObjectsInactive.Include);
+            for (var i = 0; i < menus.Length; i++)
+            {
+                if (menus[i] != null)
+                    menus[i].SetPlaneVisualizationVisible(true);
+            }
+
+            var faders = FindObjectsByType<ARPlaneMeshVisualizerFader>(FindObjectsInactive.Include);
+            for (var i = 0; i < faders.Length; i++)
+            {
+                if (faders[i] != null)
+                    faders[i].visualizeSurfaces = true;
+            }
+
+            if (m_AutomaticScenePlacement)
+                HideSceneTemplateIfPresent(force: true);
+        }
+
+        void DrawScanSurfacesCoaching()
+        {
+            var titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.Max(32, Screen.height / 28),
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true,
+                normal = { textColor = Color.white }
+            };
+
+            var width = Mathf.Min(Screen.width - 48f, 640f);
+            var height = titleStyle.fontSize * 2.2f + 28f;
+            var rect = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.12f, width, height);
+            var prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.62f);
+            GUI.Box(rect, GUIContent.none);
+            GUI.color = prev;
+            GUI.Label(rect, "Scan a surface", titleStyle);
         }
 
         static bool IsHorizontalPlaneHit(ARRaycastHit hit)
@@ -786,6 +1103,9 @@ namespace UnityEngine.XR.Templates.AR
             }
 
             DismissSurfaceCoachingAfterPlace();
+            AventoInteractionDirector.NotifyContentPlaced(instance);
+            AventoUnityNative.NotifyReady(
+                "{\"ok\":true,\"contentReady\":true,\"scenePlaced\":true}");
 
             m_Status = $"placed '{instance.name}' yaw={m_HeadingDegrees:0.#}° total={m_Placements.Count}";
             Debug.Log(
@@ -801,11 +1121,21 @@ namespace UnityEngine.XR.Templates.AR
         /// </summary>
         void DismissSurfaceCoachingAfterPlace()
         {
+            m_ScanCoachingDismissed = true;
+            m_AutoPlaceCoachingArmed = false;
+            HideScanCoachingVisuals();
+        }
+
+        void HideScanCoachingVisuals()
+        {
             var goals = FindObjectsByType<GoalManager>(FindObjectsInactive.Include);
             for (var i = 0; i < goals.Length; i++)
             {
                 if (goals[i] != null)
+                {
+                    goals[i].HoldScanSurfacesCoaching(false);
                     goals[i].DismissCoaching();
+                }
             }
 
             var menus = FindObjectsByType<ARTemplateMenuManager>(FindObjectsInactive.Include);
@@ -903,7 +1233,7 @@ namespace UnityEngine.XR.Templates.AR
             for (var i = 0; i < videos.Length; i++)
             {
                 if (videos[i] != null)
-                    videos[i].Refresh();
+                    videos[i].RefreshFitOnly();
             }
         }
 

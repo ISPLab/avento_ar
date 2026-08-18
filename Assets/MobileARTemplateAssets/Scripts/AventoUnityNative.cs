@@ -18,6 +18,9 @@ namespace UnityEngine.XR.Templates.AR
 
         [DllImport("__Internal")]
         static extern void AventoUnity_OnError(string json);
+
+        [DllImport("__Internal")]
+        static extern void AventoUnity_OnObjectInteract(string json);
 #endif
 
         public static void NotifyReady(string json)
@@ -47,6 +50,18 @@ namespace UnityEngine.XR.Templates.AR
             AventoUnity_OnError(json ?? "{}");
 #elif UNITY_ANDROID && !UNITY_EDITOR
             CallAndroid("onUnityError", json ?? "{}");
+#endif
+        }
+
+        public static void NotifyObjectInteract(string json)
+        {
+            Debug.Log($"[AventoUnityNative] ObjectInteract {json}");
+#if UNITY_IOS && !UNITY_EDITOR
+            AventoUnity_OnObjectInteract(json ?? "{}");
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            CallAndroid("onUnityObjectInteract", json ?? "{}");
+#elif UNITY_EDITOR
+            Debug.Log($"[AventoUnityNative] (editor) object interact {json}");
 #endif
         }
 
