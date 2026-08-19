@@ -2,10 +2,9 @@
 # Avento UaaL rebuild — iOS and/or Android into avento-app.
 #
 # Bare run (default):
-#   build PlacedContent AssetBundles (iOS+Android)
 #   rebuild iOS (export → UnityFramework → integrate)
 #   AND Android (export Google project → integrate unityLibrary)
-#   (upload hint skipped)
+#   (PlacedContent AssetBundles + upload hint + IDE open skipped)
 #
 # Usage:
 #   ./scripts/rebuild-ios-uaal.sh
@@ -13,7 +12,9 @@
 #   ./scripts/rebuild-ios-uaal.sh --android-only
 #   ./scripts/rebuild-ios-uaal.sh -i|--interactive
 #   ./scripts/rebuild-ios-uaal.sh --full
-#   ./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint
+#   ./scripts/rebuild-ios-uaal.sh --build-bundle
+#   ./scripts/rebuild-ios-uaal.sh --open
+#   ./scripts/rebuild-ios-uaal.sh --skip-bundle --skip-upload-hint --no-open
 #
 # Env:
 #   UNITY PROJECT AVENTO_APP
@@ -43,13 +44,13 @@ ROOT_PREFAB="$PROJECT/Assets/PlacedContent.prefab"
 MIN_BUNDLE_BYTES=$((64 * 1024))
 UNITY_LOCKFILE="$PROJECT/Temp/UnityLockfile"
 
-# Day-to-day defaults: build content packs + refresh players (both platforms).
-SKIP_BUNDLE=0
+# Day-to-day defaults: refresh players only (both platforms); skip content packs + IDE open.
+SKIP_BUNDLE=1
 SKIP_UPLOAD_HINT=1
 SKIP_EXPORT=0
 SKIP_FW=0
 SKIP_INTEGRATE=0
-NO_OPEN=0
+NO_OPEN=1
 DO_IOS=1
 DO_ANDROID=1
 
@@ -94,19 +95,19 @@ print_plan() {
   echo "  [7] iOS platform                      $(platform_label "$DO_IOS")"
   echo "  [8] Android platform                  $(platform_label "$DO_ANDROID")"
   echo ""
-  echo "  [d] Defaults   (build bundle + UaaL; skip upload; both platforms)"
+  echo "  [d] Defaults   (UaaL only; skip bundle + upload + IDE; both platforms)"
   echo "  [f] Full       (all steps ON)"
   echo "  [Enter] Start"
   echo "  [q] Quit"
 }
 
 apply_defaults() {
-  SKIP_BUNDLE=0
+  SKIP_BUNDLE=1
   SKIP_UPLOAD_HINT=1
   SKIP_EXPORT=0
   SKIP_FW=0
   SKIP_INTEGRATE=0
-  NO_OPEN=0
+  NO_OPEN=1
   DO_IOS=1
   DO_ANDROID=1
 }
@@ -130,7 +131,7 @@ prompt_interactive_flags() {
   apply_defaults
   echo "=============================================="
   echo " Avento UaaL rebuild — interactive"
-  echo " Default: build bundles + UaaL; skip upload; iOS + Android"
+  echo " Default: UaaL only; skip bundle + upload + IDE; iOS + Android"
   echo "=============================================="
 
   while true; do
@@ -164,10 +165,10 @@ for arg in "$@"; do
   case "$arg" in
     -i|--interactive) WANT_INTERACTIVE=1 ;;
     -h|--help)
-      sed -n '2,28p' "$0"
+      sed -n '2,22p' "$0"
       exit 0
       ;;
-    --skip-bundle|--skip-export|--skip-upload-hint|--skip-framework|--skip-fw|--skip-integrate|--no-open|--full|--all|--defaults|--default|--ios-only|--android-only|--skip-ios|--skip-android)
+    --skip-bundle|--build-bundle|--bundle|--skip-export|--skip-upload-hint|--skip-framework|--skip-fw|--skip-integrate|--no-open|--open|--open-ide|--full|--all|--defaults|--default|--ios-only|--android-only|--skip-ios|--skip-android)
       ARGS_GIVEN=1
       ;;
     *)
@@ -182,26 +183,28 @@ if [[ "$WANT_INTERACTIVE" -eq 1 ]]; then
   prompt_interactive_flags
 elif [[ "$ARGS_GIVEN" -eq 0 ]]; then
   apply_defaults
-  echo "Using defaults: build PlacedContent bundles + UaaL (iOS + Android) → avento-app"
-  echo "Tip: --skip-bundle / --ios-only / --android-only / -i / --full"
+  echo "Using defaults: UaaL only (iOS + Android) → avento-app; skip PlacedContent bundles + IDE open"
+  echo "Tip: --build-bundle / --ios-only / --android-only / -i / --full"
 else
-  SKIP_BUNDLE=0
+  SKIP_BUNDLE=1
   SKIP_UPLOAD_HINT=0
   SKIP_EXPORT=0
   SKIP_FW=0
   SKIP_INTEGRATE=0
-  NO_OPEN=0
+  NO_OPEN=1
   DO_IOS=1
   DO_ANDROID=1
   for arg in "$@"; do
     case "$arg" in
       -i|--interactive) ;;
       --skip-bundle) SKIP_BUNDLE=1 ;;
+      --build-bundle|--bundle) SKIP_BUNDLE=0 ;;
       --skip-export) SKIP_EXPORT=1 ;;
       --skip-upload-hint) SKIP_UPLOAD_HINT=1 ;;
       --skip-framework|--skip-fw) SKIP_FW=1 ;;
       --skip-integrate) SKIP_INTEGRATE=1 ;;
       --no-open) NO_OPEN=1 ;;
+      --open|--open-ide) NO_OPEN=0 ;;
       --full|--all) apply_full ;;
       --defaults|--default) apply_defaults ;;
       --ios-only) DO_IOS=1; DO_ANDROID=0 ;;

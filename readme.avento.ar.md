@@ -117,6 +117,7 @@ This file describes all core AR objects we create in `avento-ar`, aligned with `
   - `tts`
   - `tessa`
   - `tts_then_tessa`
+  - `caption` — show title + prompt as an on-screen text panel (no TTS / Tessa)
 - Fire-once / cooldown / line-of-sight / facing checks.
 - Single-speaker lock (prevents multiple objects from talking at once).
 
@@ -131,6 +132,18 @@ This file describes all core AR objects we create in `avento-ar`, aligned with `
    - `triggerMode`
 4. For walk-up behavior, set proximity radius/exit values.
 5. Build/upload bundles.
+
+**Caption (image / video sprite tap)**
+Do **not** add a description field on `PlayImageOnPlace` / `PlayVideoOnPlace`. Put the museum label on `AventoObjectInteract`:
+- `m_SpeechMode`: `Caption`
+- `m_TriggerMode`: `Tap`
+- `m_DisplayName`: painting / clip title
+- `m_Prompt`: description body (`promptByLanguage` for `ru` / `uk` / …)
+- `m_PauseVideoWhenCaptionShown`: `true` (pauses `PlayVideoOnPlace` while the panel is open)
+
+Tap the sprite to open the panel, tap again (sprite, panel, or empty space) to close.
+
+The panel includes **Ask Avento**: that sends `speechMode: tessa` to avento-app so Live Guide talks about this painting. Needs a device/UaaL session (the Editor only logs the event).
 
 ---
 
@@ -306,7 +319,12 @@ Use these as quick presets in the Inspector.
 ## 5.4 Optional - add interaction to any sprite
 
 For video or image sprite, you can add `AventoObjectInteract` + collider:
-- Tap info panel:
+- Tap **text description** (recommended for paintings / posters):
+  - `m_TriggerMode`: `Tap`
+  - `m_SpeechMode`: `Caption`
+  - `m_DisplayName` + `m_Prompt`: title and description
+  - `m_FireOnce`: `false`
+- Tap spoken line (app TTS):
   - `m_TriggerMode`: `Tap`
   - `m_SpeechMode`: `Tts`
 - Walk-up info panel:
@@ -414,10 +432,11 @@ This gives one prefab containing: video sprite, walking video sprite, image spri
 **AventoObjectInteract preset**
 - `m_ObjectId`: `feature_image_static_facecam_tap_tts`
 - `m_DisplayName`: `Info Panel`
-- `m_SpeechMode`: `Tts`
+- `m_SpeechMode`: `Caption` (on-screen description) or `Tts` (spoken)
 - `m_TriggerMode`: `Tap`
 - `m_FireOnce`: `false`
 - `m_CooldownSeconds`: `8`
+- `m_Prompt`: exhibit description text
 
 ## 6.7 Preset: `feature_panorama_360_image_device_look`
 

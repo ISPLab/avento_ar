@@ -802,6 +802,25 @@ namespace UnityEngine.XR.Templates.AR
             m_VideoPlayer.Play();
         }
 
+        /// <summary>
+        /// Pause/resume for caption panels. Does not change authored autoplay flags.
+        /// </summary>
+        public void SetPausedForCaption(bool paused)
+        {
+            if (m_VideoPlayer == null || m_VideoPlayer.clip == null)
+                return;
+
+            if (paused)
+            {
+                if (m_VideoPlayer.isPlaying)
+                    m_VideoPlayer.Pause();
+                return;
+            }
+
+            if (isActiveAndEnabled && !m_VideoPlayer.isPlaying)
+                m_VideoPlayer.Play();
+        }
+
         void OnVideoError(VideoPlayer source, string message)
         {
             var clip = source != null && source.clip != null ? source.clip : ResolveActiveClip();

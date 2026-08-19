@@ -3,7 +3,7 @@ using UnityEngine;
 namespace UnityEngine.XR.Templates.AR
 {
     /// <summary>
-    /// Tap and/or walk-up (proximity to AR camera) → native event for avento-app TTS / Tessa.
+    /// Tap and/or walk-up (proximity to AR camera) → native TTS / Tessa, or an in-AR caption panel.
     /// Put on any collider in the placed prefab. Voice names come from Assets/voices.json.
     /// </summary>
     [DisallowMultipleComponent]
@@ -24,6 +24,10 @@ namespace UnityEngine.XR.Templates.AR
 
         [SerializeField]
         AventoSpeechMode m_SpeechMode = AventoSpeechMode.TtsThenTessa;
+
+        [Tooltip("When Speech Mode is Caption, pause PlayVideoOnPlace on this object while the panel is open.")]
+        [SerializeField]
+        bool m_PauseVideoWhenCaptionShown = true;
 
         [SerializeField]
         AventoInteractTriggerMode m_TriggerMode = AventoInteractTriggerMode.Both;
@@ -78,6 +82,18 @@ namespace UnityEngine.XR.Templates.AR
                 gameObject.AddComponent<BoxCollider>();
         }
 
+        void OnDisable()
+        {
+            if (AventoCaptionOverlay.IsShowing(this))
+                AventoCaptionOverlay.Hide();
+        }
+
+        void OnDestroy()
+        {
+            if (AventoCaptionOverlay.IsShowing(this))
+                AventoCaptionOverlay.Hide();
+        }
+
         void OnEnable()
         {
             m_Inside = false;
@@ -123,6 +139,9 @@ namespace UnityEngine.XR.Templates.AR
 
         bool TryFire(string trigger)
         {
+            if (m_SpeechMode == AventoSpeechMode.Caption)
+                return TryShowCaption();
+
             if (m_FireOnce && m_FiredOnce)
                 return false;
             if (Time.unscaledTime < m_NextAllowedAt)
@@ -143,11 +162,101 @@ namespace UnityEngine.XR.Templates.AR
                 m_SsmlGenderHint);
 
             Debug.Log($"[AventoObjectInteract] {trigger} {id}", this);
+            if (m_SpeechMode == AventoSpeechMode.Tessa || m_SpeechMode == AventoSpeechMode.TtsThenTessa)
+                AventoUnityAudioGate.SetTessaVoiceActive(true);
             AventoUnityNative.NotifyObjectInteract(json);
 
             m_FiredOnce = true;
             m_NextAllowedAt = Time.unscaledTime + Mathf.Max(1f, m_CooldownSeconds);
             return true;
+        }
+
+        bool TryShowCaption()
+        {
+            if (AventoCaptionOverlay.IsShowing(this))
+            {
+                if (!AventoCaptionOverlay.IsShowFrame)
+                    AventoCaptionOverlay.Hide();
+                return true;
+            }
+
+            var title = string.IsNullOrWhiteSpace(m_DisplayName) ? gameObject.name : m_DisplayName.Trim();
+            AventoCaptionOverlay.Show(this, title, ResolveCaptionBody());
+            if (m_PauseVideoWhenCaptionShown)
+                SetVideoPausedForCaption(true);
+            Debug.Log($"[AventoObjectInteract] caption {gameObject.name}", this);
+            return true;
+        }
+
+        public void NotifyCaptionClosed()
+        {
+            if (m_PauseVideoWhenCaptionShown)
+                SetVideoPausedForCaption(false);
+        }
+
+        /// <summary>
+        /// Caption panel "Ask Avento" → Tessa in avento-app about this painting.
+        /// </summary>
+        public void AskTessaFromCaption()
+        {
+            var id = string.IsNullOrWhiteSpace(m_ObjectId) ? gameObject.name : m_ObjectId.Trim();
+            var title = string.IsNullOrWhiteSpace(m_DisplayName) ? gameObject.name : m_DisplayName.Trim();
+            var notes = ResolveCaptionBody();
+            var kickoff =
+                "You are Tessa, Avento's live museum guide. The traveler is standing in AR " +
+                "in front of the painting \"" + title + "\". Use these notes about the work:\n" +
+                notes +
+                "\nSpeak in the traveler's app language. Greet them briefly, describe the painting " +
+                "in a few sentences, then invite questions. Stay in a live voice conversation. " +
+                "Do not invent undocumented historical facts.";
+
+            if (!AventoInteractionDirector.Instance.TryBeginSpeech(id, 1.2f))
+                return;
+
+            var json = AventoInteractJson.Build(
+                "tap",
+                id,
+                title,
+                kickoff,
+                null,
+                AventoSpeechMode.Tessa,
+                m_VoiceNameOverride,
+                m_SsmlGenderHint);
+
+            Debug.Log($"[AventoObjectInteract] AskTessaFromCaption id={id} title={title} jsonLen={json.Length}", this);
+            AventoUnityAudioGate.SetTessaVoiceActive(true);
+            AventoUnityNative.NotifyObjectInteract(json);
+            AventoTessaVoiceBar.Show();
+        }
+
+        void SetVideoPausedForCaption(bool paused)
+        {
+            var video = GetComponentInChildren<PlayVideoOnPlace>(true);
+            if (video != null)
+                video.SetPausedForCaption(paused);
+        }
+
+        string ResolveCaptionBody()
+        {
+            var lang = AventoUnityHost.Instance != null
+                ? AventoUnityHost.Instance.SessionLanguage
+                : "";
+            lang = (lang ?? "").Trim().ToLowerInvariant();
+            if (lang.Length >= 2 && m_PromptByLanguage != null)
+            {
+                var prefix = lang.Length > 2 ? lang.Substring(0, 2) : lang;
+                for (var i = 0; i < m_PromptByLanguage.Length; i++)
+                {
+                    var row = m_PromptByLanguage[i];
+                    if (row == null || string.IsNullOrWhiteSpace(row.lang))
+                        continue;
+                    var key = row.lang.Trim().ToLowerInvariant();
+                    if (key == lang || key == prefix || lang.StartsWith(key))
+                        return row.text ?? "";
+                }
+            }
+
+            return m_Prompt ?? "";
         }
 
         bool IsFacingCamera(Camera cam)

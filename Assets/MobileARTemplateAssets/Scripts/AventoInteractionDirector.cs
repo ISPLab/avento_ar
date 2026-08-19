@@ -62,6 +62,8 @@ namespace UnityEngine.XR.Templates.AR
 
         public static void ResetSession()
         {
+            AventoCaptionOverlay.Hide();
+            AventoTessaVoiceBar.Hide();
             if (s_Instance == null)
                 return;
             s_Instance.m_LockUntil = 0f;
@@ -91,19 +93,25 @@ namespace UnityEngine.XR.Templates.AR
 
         public static bool TryHandleTap(Vector2 unityScreenPosition)
         {
+            if (AventoTessaVoiceBar.TryConsumeTap(unityScreenPosition))
+                return true;
+
+            if (AventoCaptionOverlay.TryConsumeTap(unityScreenPosition))
+                return true;
+
             var cam = Camera.main;
             if (cam == null)
                 return false;
 
             var ray = cam.ScreenPointToRay(unityScreenPosition);
-            if (!Physics.Raycast(ray, out var hit, 80f))
-                return false;
+            if (Physics.Raycast(ray, out var hit, 80f))
+            {
+                var interact = hit.collider.GetComponentInParent<AventoObjectInteract>();
+                if (interact != null)
+                    return interact.TryHandleTap();
+            }
 
-            var interact = hit.collider.GetComponentInParent<AventoObjectInteract>();
-            if (interact == null)
-                return false;
-
-            return interact.TryHandleTap();
+            return false;
         }
     }
 }

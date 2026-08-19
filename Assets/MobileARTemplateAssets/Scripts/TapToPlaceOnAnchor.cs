@@ -164,9 +164,11 @@ namespace UnityEngine.XR.Templates.AR
                 return;
             }
 
-            if (m_AutomaticScenePlacement && !m_AutoPlaceDone)
+            if (m_AutomaticScenePlacement)
             {
-                m_Status = "auto: scanning — tap ignored until a surface is found";
+                m_Status = m_AutoPlaceDone
+                    ? "auto placed — tap-to-replace disabled"
+                    : "auto: scanning — tap ignored until a surface is found";
                 return;
             }
 
@@ -280,7 +282,8 @@ namespace UnityEngine.XR.Templates.AR
             if (ev != null && ev.type == EventType.MouseDown && ev.button == 0)
             {
                 // Ignore TabBar-style cancel chrome (bottom center).
-                if (!AventoUnityHost.IsInExitChromeImgui(ev.mousePosition))
+                if (!AventoUnityHost.IsInExitChromeImgui(ev.mousePosition)
+                    && !AventoTessaVoiceBar.IsInBarImgui(ev.mousePosition))
                 {
                     m_QueuedTap = new Vector2(ev.mousePosition.x, Screen.height - ev.mousePosition.y);
                     m_HasQueuedTap = true;
@@ -657,8 +660,12 @@ namespace UnityEngine.XR.Templates.AR
                 return;
             }
 
-            if (m_AutomaticScenePlacement && !m_AutoPlaceDone)
+            if (m_AutomaticScenePlacement)
+            {
+                if (!m_AutoPlaceDone)
+                    m_Status = "auto: scanning — tap ignored";
                 return;
+            }
 
             if (!m_IgnoreUiBlocking && IsPointerOverUI(screenPosition))
             {

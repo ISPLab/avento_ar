@@ -21,6 +21,9 @@ namespace UnityEngine.XR.Templates.AR
 
         [DllImport("__Internal")]
         static extern void AventoUnity_OnObjectInteract(string json);
+
+        [DllImport("__Internal")]
+        static extern void AventoUnity_OnStopTessa(string json);
 #endif
 
         public static void NotifyReady(string json)
@@ -50,6 +53,17 @@ namespace UnityEngine.XR.Templates.AR
             AventoUnity_OnError(json ?? "{}");
 #elif UNITY_ANDROID && !UNITY_EDITOR
             CallAndroid("onUnityError", json ?? "{}");
+#endif
+        }
+
+        public static void NotifyStopTessa()
+        {
+            var json = "{\"reason\":\"user_stop\"}";
+            Debug.Log($"[AventoUnityNative] StopTessa {json}");
+#if UNITY_IOS && !UNITY_EDITOR
+            AventoUnity_OnStopTessa(json);
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            CallAndroid("onUnityStopTessa", json);
 #endif
         }
 

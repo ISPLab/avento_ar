@@ -1,9 +1,0 @@
-ManifestFileVersion: 0
-UnityVersion: 6000.5.6f1
-CRC: 2010945362
-HashAppended: 0
-AssetBundleManifest:
-  AssetBundleInfos:
-    Info_0:
-      Name: placedcontent
-      Dependencies: {}

@@ -1,0 +1,49 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.5.6f1
+CRC: 1810308883
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 17e82a46286e1164ace973f5f6d47512
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 616c1cc5b735abe02e19c849717de325
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 1eeb5f2c89f943bc1588c762e6f7ecc9
+HashAppended: 0
+ClassTypes:
+- Class: 1
+  Script: {instanceID: 0}
+- Class: 4
+  Script: {instanceID: 0}
+- Class: 21
+  Script: {instanceID: 0}
+- Class: 23
+  Script: {instanceID: 0}
+- Class: 28
+  Script: {instanceID: 0}
+- Class: 33
+  Script: {instanceID: 0}
+- Class: 43
+  Script: {instanceID: 0}
+- Class: 48
+  Script: {instanceID: 0}
+- Class: 65
+  Script: {instanceID: 0}
+- Class: 114
+  Script: {fileID: 11500000, guid: 047cef3d813014eecb3bf323b791586d, type: 3}
+- Class: 114
+  Script: {fileID: 11500000, guid: 7b08b6ad285a41cb8d1f83323925acb9, type: 3}
+- Class: 114
+  Script: {fileID: 11500000, guid: 239d7424add64c8195dd012307a968be, type: 3}
+- Class: 114
+  Script: {fileID: 11500000, guid: c8e4f1a29b7d4e6f9a0c1d2e3f4a5b6c, type: 3}
+- Class: 115
+  Script: {instanceID: 0}
+- Class: 329
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Scenes/demos/art-galary/PlacedContent.prefab
+Dependencies: []

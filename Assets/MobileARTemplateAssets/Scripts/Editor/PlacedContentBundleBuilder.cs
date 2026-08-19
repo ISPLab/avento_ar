@@ -12,7 +12,9 @@ namespace UnityEngine.XR.Templates.AR.Editor
     /// <c>Assets/PlacedContent.prefab</c>) as local file <c>placedcontent</c>.
     /// Selected-prefab menus pack the Project prefab (or Hierarchy prefab instance)
     /// and write a unique local file from the parent folder when the prefab is
-    /// named <c>PlacedContent</c> (e.g. <c>demos/portal/PlacedContent.prefab</c> → <c>portal</c>).
+    /// named <c>PlacedContent</c>, with a platform suffix and <c>.bundle</c> extension
+    /// matching avento-web <c>generateUnityBundleFileName</c>
+    /// (e.g. <c>demos/art-galary/PlacedContent.prefab</c> → <c>art-galary.ios.bundle</c> / <c>art-galary.android.bundle</c>).
     /// </summary>
     public static class PlacedContentBundleBuilder
     {
@@ -179,9 +181,10 @@ namespace UnityEngine.XR.Templates.AR.Editor
         }
 
         /// <summary>
-        /// Unique local AssetBundle file name. Default Resources/root PlacedContent stays
+        /// Content base name (without platform). Default Resources/root PlacedContent stays
         /// <c>placedcontent</c>. Demo prefabs all named PlacedContent use the parent folder
         /// (<c>Assets/Scenes/demos/portal/PlacedContent.prefab</c> → <c>portal</c>).
+        /// <see cref="OutputBundleFileName"/> appends <c>-ios</c> / <c>-android</c>.
         /// </summary>
         public static string UniqueBundleNameForPrefab(string prefabPath)
         {
@@ -244,9 +247,36 @@ namespace UnityEngine.XR.Templates.AR.Editor
             return string.IsNullOrEmpty(lower) ? "content" : lower;
         }
 
+        /// <summary>
+        /// Local output file name: <c>{contentBase}.ios.bundle</c> / <c>{contentBase}.android.bundle</c>.
+        /// Matches avento-web <c>generateUnityBundleFileName</c> in <c>vr-upload.ts</c>.
+        /// </summary>
+        public static string OutputBundleFileName(string contentBaseName, BuildTarget target)
+        {
+            var baseName = SanitizeBundleName(contentBaseName);
+            var platform = PlatformSuffix(target);
+            var dotPlatform = "." + platform;
+            if (baseName.EndsWith(dotPlatform, System.StringComparison.OrdinalIgnoreCase))
+                baseName = baseName.Substring(0, baseName.Length - dotPlatform.Length);
+            return baseName + "." + platform + ".bundle";
+        }
+
+        static string PlatformSuffix(BuildTarget target)
+        {
+            switch (target)
+            {
+                case BuildTarget.iOS:
+                    return "ios";
+                case BuildTarget.Android:
+                    return "android";
+                default:
+                    return SanitizeBundleName(target.ToString());
+            }
+        }
+
         static bool Build(
             string prefabPath,
-            string bundleName,
+            string contentBaseName,
             BuildTarget target,
             bool interactive,
             string displayAssetName = null)
@@ -264,8 +294,8 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 ? Path.GetFileNameWithoutExtension(prefabPath)
                 : displayAssetName;
 
-            var platformFolder = target.ToString();
-            var outputDir = Path.Combine(OutputRoot, platformFolder);
+            var bundleName = OutputBundleFileName(contentBaseName, target);
+            var outputDir = OutputRoot;
             Directory.CreateDirectory(outputDir);
 
             var panoramaSummary = ApplyPanoramaContentModeForBuild(prefabPath, out var restorePanorama);
@@ -340,10 +370,11 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 extra +
                 $"Prefab: {prefabPath}\n" +
                 $"unityAssetName (optional override): {assetName}\n" +
+                $"content base: {contentBaseName}\n" +
                 $"local file: {bundleName}\n" +
                 $"Size ≈ {sizeMb:F2} MB\n" +
-                "Upload this file in avento-web (Unity Scene). MinIO stores a GUID; " +
-                "the app caches by that GUID (local filename does not matter after upload). " +
+                "Upload this file in avento-web (Unity Scene). " +
+                "The file name ({content}-{ios|android}.bundle) is used as the MinIO key. " +
                 "Leave Asset name blank in admin to auto-load the first prefab.",
                 AssetDatabase.LoadAssetAtPath<Object>(prefabPath));
 
@@ -357,9 +388,9 @@ namespace UnityEngine.XR.Templates.AR.Editor
                     extra +
                     $"Prefab: {prefabPath}\n" +
                     $"Local file name: {bundleName}\n" +
-                    "(unique per demo folder — does not overwrite other demos)\n\n" +
+                    $"(content: {contentBaseName}, platform: {PlatformSuffix(target)})\n\n" +
                     $"Suggested unityAssetName (optional): {assetName}\n\n" +
-                    "After upload, identity is the MinIO GUID (not this filename).\n" +
+                    "File name is used as MinIO key (synced with avento-web naming).\n" +
                     "Build separate bundles per platform (iOS / Android).",
                     "OK");
             }

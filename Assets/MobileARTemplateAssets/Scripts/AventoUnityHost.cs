@@ -409,6 +409,7 @@ namespace UnityEngine.XR.Templates.AR
             m_OpenBundlePath = null;
             AutoStartTessa = false;
             AutoStartTessaPrompt = "";
+            AventoUnityAudioGate.Reset();
             AventoInteractionDirector.ResetSession();
 
             var payload =

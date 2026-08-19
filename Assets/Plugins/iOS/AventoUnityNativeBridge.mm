@@ -44,6 +44,11 @@ void AventoUnity_OnObjectInteract(const char *json)
     AventoUnityPost(@"AventoUnityOnObjectInteract", json);
 }
 
+void AventoUnity_OnStopTessa(const char *json)
+{
+    AventoUnityPost(@"AventoUnityOnStopTessa", json);
+}
+
 #ifdef __cplusplus
 }
 #endif

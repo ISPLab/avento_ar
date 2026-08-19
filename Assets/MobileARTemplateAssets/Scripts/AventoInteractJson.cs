@@ -9,6 +9,8 @@ namespace UnityEngine.XR.Templates.AR
         Tts = 0,
         Tessa = 1,
         TtsThenTessa = 2,
+        /// <summary>Show title + prompt in Unity. Does not start TTS or Tessa.</summary>
+        Caption = 3,
     }
 
     public enum AventoInteractTriggerMode
@@ -91,6 +93,8 @@ namespace UnityEngine.XR.Templates.AR
                     return "tessa";
                 case AventoSpeechMode.TtsThenTessa:
                     return "tts_then_tessa";
+                case AventoSpeechMode.Caption:
+                    return "caption";
                 default:
                     return "tts";
             }

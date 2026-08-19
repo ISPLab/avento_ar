@@ -108,6 +108,7 @@ namespace UnityEngine.XR.Templates.AR
                 AventoSsmlGenderHint.Unspecified);
 
             Debug.Log("[AventoSceneTessa] scene_start", this);
+            AventoUnityAudioGate.SetTessaVoiceActive(true);
             AventoUnityNative.NotifyObjectInteract(json);
         }
     }
