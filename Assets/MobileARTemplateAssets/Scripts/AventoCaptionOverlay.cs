@@ -9,6 +9,8 @@ namespace UnityEngine.XR.Templates.AR
     public class AventoCaptionOverlay : MonoBehaviour
     {
         public const string GameObjectName = "AventoCaptionOverlay";
+        const string MicIconResourcePath = "overlays/mic";
+        const string MicIconAssetPath = "Assets/Scenes/overlays/mic.png";
 
         static AventoCaptionOverlay s_Instance;
 
@@ -23,7 +25,8 @@ namespace UnityEngine.XR.Templates.AR
         GUIStyle m_TitleStyle;
         GUIStyle m_BodyStyle;
         GUIStyle m_HintStyle;
-        GUIStyle m_AskButtonStyle;
+        Texture2D m_MicIconTexture;
+        bool m_MicIconLoadAttempted;
 
         public static bool IsVisible =>
             s_Instance != null && s_Instance.isActiveAndEnabled && s_Instance.m_Source != null;
@@ -61,6 +64,7 @@ namespace UnityEngine.XR.Templates.AR
 
             s_Instance = this;
             gameObject.name = GameObjectName;
+            ResolveMicIconTexture();
         }
 
         void OnDestroy()
@@ -83,6 +87,10 @@ namespace UnityEngine.XR.Templates.AR
             inst.m_Body = body ?? "";
             inst.m_ShowFrame = Time.frameCount;
             inst.m_BodyScroll = Vector2.zero;
+            // Reload each open so edited mic.png is picked up (DontDestroyOnLoad otherwise caches forever).
+            inst.m_MicIconLoadAttempted = false;
+            inst.m_MicIconTexture = null;
+            inst.ResolveMicIconTexture();
             inst.enabled = true;
             inst.gameObject.SetActive(true);
         }
@@ -131,7 +139,11 @@ namespace UnityEngine.XR.Templates.AR
                 return true;
             }
 
-            // Tap anywhere (panel body or dim background) dismisses.
+            // Consume taps on the panel so AR behind it does not fire, but keep overlay open for scrolling.
+            if (s_Instance.m_PanelRect.Contains(imgui))
+                return true;
+
+            // Tap dim background dismisses.
             Hide();
             return true;
         }
@@ -143,22 +155,19 @@ namespace UnityEngine.XR.Templates.AR
 
             EnsureStyles();
 
-            var pad = Mathf.Max(12f, Screen.width * 0.03f);
-            var width = Mathf.Min(Screen.width - pad * 2f, 920f);
-            var maxH = Screen.height * 0.62f;
+            var pad = Mathf.Max(8f, Screen.width * 0.015f);
+            var width = Screen.width - pad * 2f;
+            var height = Screen.height * 0.4f;
             var innerW = width - 32f;
-            var iconSize = Mathf.Max(44f, Screen.height / 18f);
-            var iconGap = 10f;
-            var titleAreaW = innerW - iconSize - iconGap;
+            var iconSize = Mathf.Max(48f, Screen.height / 15f);
+            var micPad = 8f;
             var titleH = string.IsNullOrEmpty(m_Title)
                 ? 0f
-                : m_TitleStyle.CalcHeight(new GUIContent(m_Title), titleAreaW);
+                : m_TitleStyle.CalcHeight(new GUIContent(m_Title), innerW);
             var bodyText = string.IsNullOrWhiteSpace(m_Body) ? " " : m_Body;
             var bodyH = m_BodyStyle.CalcHeight(new GUIContent(bodyText), innerW);
-            var buttonH = Mathf.Max(50f, Screen.height / 16f);
             var hintH = m_HintStyle.lineHeight + 6f;
-            var headerH = Mathf.Max(iconSize, titleH > 0f ? titleH : 0f) + 8f;
-            var height = Mathf.Min(maxH, 28f + headerH + bodyH + buttonH + hintH + 34f);
+            var headerH = (titleH > 0f ? titleH : 0f) + 8f;
             var panelX = (Screen.width - width) * 0.5f;
             var panelY = (Screen.height - height) * 0.5f;
             m_PanelRect = new Rect(panelX, panelY, width, height);
@@ -173,21 +182,17 @@ namespace UnityEngine.XR.Templates.AR
 
             var inner = new Rect(m_PanelRect.x + 16f, m_PanelRect.y + 16f, m_PanelRect.width - 32f, m_PanelRect.height - 20f);
 
-            m_AskIconRect = new Rect(inner.xMax - iconSize, inner.y, iconSize, iconSize);
-            GUI.color = new Color(0.22f, 0.48f, 0.95f, 1f);
-            GUI.Box(m_AskIconRect, GUIContent.none);
-            GUI.color = prev;
-            DrawMicIcon(m_AskIconRect);
-
+            m_AskIconRect = new Rect(m_PanelRect.xMax - iconSize - micPad, m_PanelRect.y + micPad, iconSize, iconSize);
+            m_AskButtonRect = new Rect(0f, 0f, 0f, 0f);
             if (!string.IsNullOrEmpty(m_Title))
             {
-                GUI.Label(new Rect(inner.x, inner.y, titleAreaW, headerH), m_Title, m_TitleStyle);
+                GUI.Label(new Rect(inner.x, inner.y, inner.width, headerH), m_Title, m_TitleStyle);
             }
 
             inner.y += headerH;
             inner.height -= headerH;
 
-            var bodyAreaH = inner.height - buttonH - hintH - 14f;
+            var bodyAreaH = inner.height - hintH - 12f;
             var bodyAreaRect = new Rect(inner.x, inner.y, inner.width, bodyAreaH);
             var contentH = Mathf.Max(bodyAreaH, bodyH + 8f);
             var bodyViewRect = new Rect(0f, 0f, inner.width - 18f, contentH);
@@ -200,20 +205,24 @@ namespace UnityEngine.XR.Templates.AR
             GUI.Label(new Rect(0f, 0f, bodyViewRect.width, contentH), bodyText, m_BodyStyle);
             GUI.EndScrollView();
 
-            m_AskButtonRect = new Rect(inner.x, m_PanelRect.yMax - hintH - buttonH - 10f, inner.width, buttonH);
-            GUI.color = new Color(0.22f, 0.48f, 0.95f, 1f);
-            GUI.Box(m_AskButtonRect, GUIContent.none);
-            GUI.color = prev;
-            DrawMicIcon(new Rect(m_AskButtonRect.x + 10f, m_AskButtonRect.y + 6f, buttonH - 12f, buttonH - 12f));
-            GUI.Label(
-                new Rect(m_AskButtonRect.x + buttonH, m_AskButtonRect.y, m_AskButtonRect.width - buttonH, m_AskButtonRect.height),
-                "Ask Avento",
-                m_AskButtonStyle);
-
             GUI.Label(
                 new Rect(inner.x, m_PanelRect.yMax - hintH - 6f, inner.width, hintH),
-                "Tap anywhere to close",
+                "Tap outside to close",
                 m_HintStyle);
+
+            // Draw mic action last so it is always visible above text.
+            var micTexture = ResolveMicIconTexture();
+            if (micTexture != null)
+            {
+                GUI.DrawTexture(m_AskIconRect, micTexture, ScaleMode.ScaleToFit, true);
+            }
+            else
+            {
+                GUI.color = new Color(0.92f, 0.18f, 0.20f, 1f);
+                GUI.DrawTexture(m_AskIconRect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
+                GUI.color = prev;
+                DrawMicIcon(m_AskIconRect);
+            }
         }
 
         static void DrawMicIcon(Rect rect)
@@ -236,6 +245,38 @@ namespace UnityEngine.XR.Templates.AR
             GUI.Box(new Rect(cx - baseW * 0.5f, head.yMax + stemH + 1f, baseW, baseH), GUIContent.none);
 
             GUI.color = prev;
+        }
+
+        Texture2D ResolveMicIconTexture()
+        {
+            if (m_MicIconLoadAttempted)
+                return m_MicIconTexture;
+
+            m_MicIconLoadAttempted = true;
+
+#if UNITY_EDITOR
+            // Prefer the editable Scenes asset in Editor so PNG swaps show immediately.
+            m_MicIconTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(MicIconAssetPath);
+            if (m_MicIconTexture != null)
+            {
+                Debug.Log(
+                    $"[AventoCaptionOverlay] Mic icon loaded from {MicIconAssetPath} ({m_MicIconTexture.width}x{m_MicIconTexture.height})");
+                return m_MicIconTexture;
+            }
+#endif
+
+            m_MicIconTexture = Resources.Load<Texture2D>(MicIconResourcePath);
+            if (m_MicIconTexture != null)
+            {
+                Debug.Log(
+                    $"[AventoCaptionOverlay] Mic icon loaded from Resources/{MicIconResourcePath} ({m_MicIconTexture.width}x{m_MicIconTexture.height})");
+                return m_MicIconTexture;
+            }
+
+            Debug.LogWarning(
+                $"[AventoCaptionOverlay] Mic icon not found. Checked {MicIconAssetPath} and Resources/{MicIconResourcePath}. Falling back to built-in mic.");
+
+            return m_MicIconTexture;
         }
 
         void EnsureStyles()
@@ -265,14 +306,6 @@ namespace UnityEngine.XR.Templates.AR
                 fontStyle = FontStyle.Italic,
                 alignment = TextAnchor.LowerRight,
                 normal = { textColor = new Color(1f, 1f, 1f, 0.55f) }
-            };
-            m_AskButtonStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.Max(20, Screen.height / 42),
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false,
-                normal = { textColor = Color.white }
             };
         }
     }

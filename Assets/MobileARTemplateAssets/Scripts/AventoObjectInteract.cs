@@ -195,7 +195,7 @@ namespace UnityEngine.XR.Templates.AR
         }
 
         /// <summary>
-        /// Caption panel "Ask Avento" → Tessa in avento-app about this painting.
+        /// Caption panel mic button → Tessa in avento-app about this painting.
         /// </summary>
         public void AskTessaFromCaption()
         {

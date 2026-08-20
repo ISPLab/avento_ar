@@ -33,6 +33,8 @@ namespace UnityEngine.XR.Templates.AR
 
         const float k_AutoPlaceMinPlaneArea = 0.08f;
         const float k_AutoPlaceMinCoachingSeconds = 0.4f;
+        const string k_ScanOverlayResourcePath = "overlays/scanning";
+        const string k_ScanOverlayAssetPath = "Assets/Scenes/overlays/scanning.png";
 
         [SerializeField]
         ARRaycastManager m_RaycastManager;
@@ -113,6 +115,8 @@ namespace UnityEngine.XR.Templates.AR
         float m_AutoPlaceArmedAt;
         bool m_AutoPlaceCoachingArmed;
         bool m_ScanCoachingDismissed;
+        Texture2D m_ScanCoachingTexture;
+        bool m_ScanCoachingTextureLoadAttempted;
 
         struct Placement
         {
@@ -890,6 +894,25 @@ namespace UnityEngine.XR.Templates.AR
 
         void DrawScanSurfacesCoaching()
         {
+            var scanTexture = ResolveScanCoachingTexture();
+            if (scanTexture != null)
+            {
+                var maxWidth = Screen.width * 0.58f;
+                var maxHeight = Screen.height * 0.34f;
+                var texW = Mathf.Max(1f, scanTexture.width);
+                var texH = Mathf.Max(1f, scanTexture.height);
+                var scale = Mathf.Min(maxWidth / texW, maxHeight / texH);
+                var drawW = texW * scale;
+                var drawH = texH * scale;
+                var rect = new Rect(
+                    (Screen.width - drawW) * 0.5f,
+                    (Screen.height - drawH) * 0.5f,
+                    drawW,
+                    drawH);
+                GUI.DrawTexture(rect, scanTexture, ScaleMode.ScaleToFit, true);
+                return;
+            }
+
             var titleStyle = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Mathf.Max(32, Screen.height / 28),
@@ -898,15 +921,51 @@ namespace UnityEngine.XR.Templates.AR
                 wordWrap = true,
                 normal = { textColor = Color.white }
             };
-
             var width = Mathf.Min(Screen.width - 48f, 640f);
             var height = titleStyle.fontSize * 2.2f + 28f;
-            var rect = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.12f, width, height);
+            var rectFallback = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
             var prev = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.62f);
-            GUI.Box(rect, GUIContent.none);
+            GUI.Box(rectFallback, GUIContent.none);
             GUI.color = prev;
-            GUI.Label(rect, "Scan a surface", titleStyle);
+            GUI.Label(rectFallback, "scanning ...", titleStyle);
+        }
+
+        Texture2D ResolveScanCoachingTexture()
+        {
+            if (m_ScanCoachingTextureLoadAttempted)
+                return m_ScanCoachingTexture;
+
+            m_ScanCoachingTextureLoadAttempted = true;
+
+            // Device builds can only load from Resources (AssetDatabase is Editor-only).
+            m_ScanCoachingTexture = Resources.Load<Texture2D>(k_ScanOverlayResourcePath);
+            if (m_ScanCoachingTexture != null)
+            {
+                Debug.Log(
+                    $"[TapPlace] Scan overlay loaded from Resources/{k_ScanOverlayResourcePath} " +
+                    $"({m_ScanCoachingTexture.width}x{m_ScanCoachingTexture.height})",
+                    this);
+                return m_ScanCoachingTexture;
+            }
+
+#if UNITY_EDITOR
+            m_ScanCoachingTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(k_ScanOverlayAssetPath);
+            if (m_ScanCoachingTexture != null)
+            {
+                Debug.Log(
+                    $"[TapPlace] Scan overlay loaded from {k_ScanOverlayAssetPath} " +
+                    $"({m_ScanCoachingTexture.width}x{m_ScanCoachingTexture.height})",
+                    this);
+                return m_ScanCoachingTexture;
+            }
+#endif
+
+            Debug.LogWarning(
+                $"[TapPlace] Scan overlay missing. Put PNG at Assets/Resources/{k_ScanOverlayResourcePath}.png " +
+                $"(also editable at {k_ScanOverlayAssetPath}). Falling back to text.",
+                this);
+            return null;
         }
 
         static bool IsHorizontalPlaneHit(ARRaycastHit hit)
