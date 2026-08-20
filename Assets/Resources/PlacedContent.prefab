@@ -260,6 +260,7 @@ MonoBehaviour:
   m_Prompt: 
   m_PromptByLanguage: []
   m_SpeechMode: 0
+  m_PauseVideoWhenCaptionShown: 1
   m_TriggerMode: 0
   m_ProximityRadiusMeters: 1.8
   m_ProximityExitMeters: 2.4
@@ -626,7 +627,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5160974171962768074}
   m_Enabled: 1
-  m_VideoClip: {fileID: 32900000, guid: 8c07d34c88ee4a02b1c823be2a0ea774, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: befebd8861ecd4c799d2209f5f4c19c2, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -640,14 +641,12 @@ VideoPlayer:
   m_TimeUpdateMode: 2
   m_PlaybackSpeed: 1
   m_AudioOutputMode: 0
-  m_TargetAudioSources:
-  - {fileID: 0}
-  m_DirectAudioVolumes:
-  - 1
+  m_TargetAudioSources: []
+  m_DirectAudioVolumes: []
   m_Url: 
-  m_EnabledAudioTracks: 01
-  m_DirectAudioMutes: 00
-  m_ControlledAudioTrackCount: 1
+  m_EnabledAudioTracks: 
+  m_DirectAudioMutes: 
+  m_ControlledAudioTrackCount: 0
   m_PlayOnAwake: 0
   m_SkipOnDrop: 1
   m_Looping: 1
@@ -666,10 +665,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_VideoClip: {fileID: 32900000, guid: 8c07d34c88ee4a02b1c823be2a0ea774, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: befebd8861ecd4c799d2209f5f4c19c2, type: 3}
   m_EditorFallbackClip: {fileID: 0}
   m_EditorOpaqueFallbackClip: {fileID: 0}
   m_TexturePropertyName: _BaseMap
+  m_AlphaLayout: 1
   m_FlipVertical: 0
   m_PlayAudio: 1
   m_SpatialBlend: 1
@@ -737,6 +737,7 @@ MonoBehaviour:
   m_Prompt: 
   m_PromptByLanguage: []
   m_SpeechMode: 1
+  m_PauseVideoWhenCaptionShown: 1
   m_TriggerMode: 2
   m_ProximityRadiusMeters: 2.2
   m_ProximityExitMeters: 3
@@ -847,7 +848,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5727451918948065151}
   m_Enabled: 1
-  m_VideoClip: {fileID: 32900000, guid: 8c07d34c88ee4a02b1c823be2a0ea774, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: befebd8861ecd4c799d2209f5f4c19c2, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -861,14 +862,12 @@ VideoPlayer:
   m_TimeUpdateMode: 2
   m_PlaybackSpeed: 1
   m_AudioOutputMode: 0
-  m_TargetAudioSources:
-  - {fileID: 0}
-  m_DirectAudioVolumes:
-  - 1
+  m_TargetAudioSources: []
+  m_DirectAudioVolumes: []
   m_Url: 
-  m_EnabledAudioTracks: 01
-  m_DirectAudioMutes: 00
-  m_ControlledAudioTrackCount: 1
+  m_EnabledAudioTracks: 
+  m_DirectAudioMutes: 
+  m_ControlledAudioTrackCount: 0
   m_PlayOnAwake: 0
   m_SkipOnDrop: 1
   m_Looping: 1
@@ -887,10 +886,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_VideoClip: {fileID: 32900000, guid: 8c07d34c88ee4a02b1c823be2a0ea774, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: befebd8861ecd4c799d2209f5f4c19c2, type: 3}
   m_EditorFallbackClip: {fileID: 0}
   m_EditorOpaqueFallbackClip: {fileID: 0}
   m_TexturePropertyName: _BaseMap
+  m_AlphaLayout: 1
   m_FlipVertical: 0
   m_PlayAudio: 0
   m_SpatialBlend: 1

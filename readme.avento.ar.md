@@ -19,13 +19,15 @@ This file describes all core AR objects we create in `avento-ar`, aligned with `
 
 **What it is**
 - A transparent video billboard (quad + `VideoPlayer` + `PlayVideoOnPlace`).
-- Used for character-like content such as the walking man.
+- Used for character-like content such as the walking man, bouquet, etc.
 
-**Key script**
+**Key script / shader / material**
 - `Assets/MobileARTemplateAssets/Scripts/PlayVideoOnPlace.cs`
+- Shader `AR/VideoSpriteTransparent`
+- Material `Assets/MobileARTemplateAssets/Materials/VideoPlane.mat` (use this — not an image/painting material)
 
 **Main capabilities**
-- Alpha video playback (transparent background).
+- Transparent background (alpha from video layout — see below).
 - Auto fit by video aspect.
 - Face camera billboard mode.
 - Optional movement toward user camera (walking effect):
@@ -34,13 +36,58 @@ This file describes all core AR objects we create in `avento-ar`, aligned with `
   - `m_StopDistanceMeters`
   - optional walk bob.
 
+### How transparency works on device (important)
+
+Unity `VideoPlayer` on **iOS/Android often drops HEVC-with-alpha**. QuickTime can look perfect while the phone shows a **black box / black border** around the subject.
+
+**Device path we use: side-by-side (SBS) H.264**
+
+| Half of frame | Content |
+|---|---|
+| Left | RGB color |
+| Right | Grayscale alpha matte (white = opaque, black = transparent) |
+
+- `PlayVideoOnPlace.m_AlphaLayout` = **`SideBySide`**
+- Shader samples left for color and right for alpha
+- Regular **H.264** — no HEVC alpha track required
+- Playback uses an **ARGB32 RenderTexture** into `_BaseMap`
+
+**Authoring (DaVinci → Unity)**
+1. In **DaVinci Resolve**, export the clip as **Apple ProRes 4444** (with alpha). That `.mov` is the **alpha source**.
+   - Do **not** use Resolve “HEVC with Alpha” / multilayer HEVC as the Unity source — `ffmpeg` often extracts an **empty mask** (SBS right half all black).
+2. Drop the ProRes `.mov` into the demo folder and assign it to `m_VideoClip` (or keep `*_sbs.mp4` beside it).
+3. Use material **`VideoPlane`** / shader **`AR/VideoSpriteTransparent`**.
+4. Build the **iOS or Android** AssetBundle. The builder **auto-converts** ProRes → `*_sbs.mp4` (H.264 side-by-side). ProRes itself is **not** shipped in the device bundle.
+
+**Automatic SBS convert on bundle build**
+
+- Use **`AR Test → Build AssetBundle from selected prefab (iOS/Android)`**  
+  with the demo `PlacedContent.prefab` selected in Project (not `Build PlacedContent AssetBundle…` — that packs the default Resources prefab only).
+- Or run **`AR Test → Convert selected prefab videos to side-by-side`** to create `*_sbs.mp4` without building a bundle.
+- Implementation: `VideoSideBySideConverter` (also called from `PlacedContentBundleBuilder` on iOS/Android)
+- Requires **`ffmpeg`** (`brew install ffmpeg`; Unity uses `/opt/homebrew/bin/ffmpeg` when PATH is empty)
+- Writes `{sourceName}_sbs.mp4` next to the ProRes source
+- Sets `m_VideoClip` → SBS and `m_AlphaLayout` → `SideBySide`
+- Fails if the source is Resolve multilayer HEVC or the SBS matte is empty
+- Console / dialog: `Side-by-side for device bundle: converted=…`
+
+**Do not rely on**
+- Resolve **HEVC Main 10 multilayer** (`lhvC`) as the SBS source — QT OK, but SBS convert loses the mask
+- Shipping **ProRes** inside the AssetBundle — iOS cannot play it; only use ProRes as the **pre-SBS** source
+- `AR/ImageSpriteTransparent` for video — that shader is for still PNG billboards
+
+**Optional editor-only fallbacks** (Simulator / macOS)
+- `m_EditorFallbackClip` — QT RLE / Animation alpha
+- `m_EditorOpaqueFallbackClip` — opaque H.264 if no alpha fallback
+- Device bundles strip these so only the SBS (or device) clip is packed
+
 **How to use**
-1. Create/select a quad in your placed prefab.
-2. Add `VideoPlayer`, `MeshRenderer`, and `PlayVideoOnPlace`.
-3. Assign device-safe clip in `m_VideoClip` (for iOS use HEVC-with-alpha clip like `walking_man_device.mov`).
-4. Keep `AspectFitMode = FitHeight` for full-body character scale.
+1. In DaVinci, export **ProRes 4444 (with alpha)** and put the `.mov` in the demo folder.
+2. Create/select a quad; add `VideoPlayer`, `MeshRenderer`, `PlayVideoOnPlace`.
+3. Assign `VideoPlane` material and the ProRes clip to `m_VideoClip`.
+4. Keep `AspectFitMode = FitHeight` for full-body (or `FitWidth` for tall portraits).
 5. Enable `Face camera` and (optionally) `Move toward camera`.
-6. Build iOS/Android bundles and upload to avento-web.
+6. Build iOS/Android bundles (SBS convert runs automatically from ProRes) and upload to avento-web.
 
 ---
 
@@ -198,16 +245,18 @@ The panel includes **Ask Avento**: that sends `speechMode: tessa` to avento-app 
 Use this for a character that appears as a transparent video and can approach user:
 
 1. In `PlacedContent`, create `walking_man` object (quad).
-2. Add `PlayVideoOnPlace` with:
-   - HEVC alpha clip for device (`walking_man_device.mov`)
+2. Material = `VideoPlane` (`AR/VideoSpriteTransparent`).
+3. Add `PlayVideoOnPlace` with:
+   - Alpha **source** clip (or `*_sbs.mp4` after first iOS/Android bundle build)
+   - After device bundle build: `m_AlphaLayout = SideBySide` (set automatically)
    - `Face camera = true`
    - `AspectFitMode = FitHeight`
    - `MoveTowardCamera = true`
-3. Add collider + `AventoObjectInteract` for tap/proximity dialog:
+4. Add collider + `AventoObjectInteract` for tap/proximity dialog:
    - `triggerMode = Both`
    - `speechMode = tessa` (or `tts_then_tessa`)
-4. Build iOS and Android bundles.
-5. Upload both in avento-web Unity Scene item.
+5. Build iOS and Android bundles (SBS convert runs automatically).
+6. Upload both in avento-web Unity Scene item.
 
 ---
 
@@ -236,8 +285,10 @@ Use these as quick presets in the Inspector.
 - Components: `MeshRenderer`, `VideoPlayer`, `PlayVideoOnPlace`
 
 **PlayVideoOnPlace preset**
-- `m_VideoClip`: your alpha/regular video clip
+- `m_VideoClip`: alpha source clip (or `*_sbs.mp4`)
+- `m_AlphaLayout`: `SideBySide` after device bundle build (auto)
 - `m_TexturePropertyName`: `_BaseMap`
+- Material: `VideoPlane`
 - `m_FitQuadToAspect`: `true`
 - `m_AspectFitMode`: `FitHeight`
 - `m_Opacity`: `1`
@@ -260,7 +311,9 @@ Use these as quick presets in the Inspector.
 - Components: `MeshRenderer`, `VideoPlayer`, `PlayVideoOnPlace`, `BoxCollider`, `AventoObjectInteract`
 
 **PlayVideoOnPlace preset (walking)**
-- `m_VideoClip`: `walking_man_device.mov` (device-safe HEVC alpha)
+- `m_VideoClip`: alpha source or `*_sbs.mp4` (bundle build converts automatically)
+- `m_AlphaLayout`: `SideBySide` on device packs
+- Material: `VideoPlane`
 - `m_TexturePropertyName`: `_BaseMap`
 - `m_FitQuadToAspect`: `true`
 - `m_AspectFitMode`: `FitHeight`
@@ -377,7 +430,9 @@ This gives one prefab containing: video sprite, walking video sprite, image spri
 - `PlayVideoOnPlace`
 
 **Inspector preset**
-- `m_VideoClip`: assign sample clip
+- `m_VideoClip`: assign alpha source (or `*_sbs.mp4`)
+- `m_AlphaLayout`: `SideBySide` after device bundle build
+- Material: `VideoPlane`
 - `m_FitQuadToAspect`: `true`
 - `m_AspectFitMode`: `FitHeight`
 - `m_FaceCamera`: `true`
@@ -395,7 +450,9 @@ This gives one prefab containing: video sprite, walking video sprite, image spri
 - `AventoObjectInteract`
 
 **PlayVideoOnPlace preset**
-- `m_VideoClip`: `walking_man_device.mov`
+- `m_VideoClip`: alpha source or `*_sbs.mp4`
+- `m_AlphaLayout`: `SideBySide` after iOS/Android bundle build
+- Material: `VideoPlane`
 - `m_FitQuadToAspect`: `true`
 - `m_AspectFitMode`: `FitHeight`
 - `m_FaceCamera`: `true`

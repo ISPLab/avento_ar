@@ -15,6 +15,8 @@ namespace UnityEngine.XR.Templates.AR.Editor
     /// named <c>PlacedContent</c>, with a platform suffix and <c>.bundle</c> extension
     /// matching avento-web <c>generateUnityBundleFileName</c>
     /// (e.g. <c>demos/art-galary/PlacedContent.prefab</c> → <c>art-galary.ios.bundle</c> / <c>art-galary.android.bundle</c>).
+    /// iOS/Android builds auto-convert <see cref="PlayVideoOnPlace"/> clips to side-by-side
+    /// H.264 (<c>*_sbs.mp4</c>) via ffmpeg before packing.
     /// </summary>
     public static class PlacedContentBundleBuilder
     {
@@ -306,6 +308,35 @@ namespace UnityEngine.XR.Templates.AR.Editor
             if (!string.IsNullOrEmpty(videoSummary))
                 Debug.Log($"[PlacedContentBundle] {videoSummary}", AssetDatabase.LoadAssetAtPath<Object>(prefabPath));
 
+            string sbsSummary = null;
+            if (target == BuildTarget.iOS || target == BuildTarget.Android)
+            {
+                try
+                {
+                    sbsSummary = VideoSideBySideConverter.ApplySideBySideForDeviceBuild(prefabPath);
+                    if (!string.IsNullOrEmpty(sbsSummary))
+                        Debug.Log($"[PlacedContentBundle] {sbsSummary}", AssetDatabase.LoadAssetAtPath<Object>(prefabPath));
+                }
+                catch (System.Exception ex)
+                {
+                    restorePanorama?.Invoke();
+                    restoreVideo?.Invoke();
+                    Debug.LogError(
+                        $"[PlacedContentBundle] Side-by-side convert failed for {prefabPath}: {ex.Message}");
+                    if (interactive)
+                    {
+                        EditorUtility.DisplayDialog(
+                            "AssetBundle",
+                            "Side-by-side video convert failed.\n\n" +
+                            ex.Message +
+                            "\n\nInstall ffmpeg (brew install ffmpeg) and retry.",
+                            "OK");
+                    }
+
+                    return false;
+                }
+            }
+
             AssetBundleManifest manifest;
             try
             {
@@ -364,7 +395,11 @@ namespace UnityEngine.XR.Templates.AR.Editor
                 ? new FileInfo(bundlePath).Length / (1024f * 1024f)
                 : 0f;
 
-            var extra = string.IsNullOrEmpty(panoramaSummary) ? string.Empty : $"{panoramaSummary}\n";
+            var extra = string.Empty;
+            if (!string.IsNullOrEmpty(panoramaSummary))
+                extra += panoramaSummary + "\n";
+            if (!string.IsNullOrEmpty(sbsSummary))
+                extra += sbsSummary + "\n";
             Debug.Log(
                 $"[PlacedContentBundle] Built for {target}:\n{Path.GetFullPath(bundlePath)}\n" +
                 extra +
