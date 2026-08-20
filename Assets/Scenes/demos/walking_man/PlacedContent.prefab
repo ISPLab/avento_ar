@@ -103,7 +103,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1509298366052246855}
   m_Enabled: 1
-  m_VideoClip: {fileID: 32900000, guid: 7ee057f60c3ff4e25a1738bc7ccfa565, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: 0d35beda58c44115bd6cbbeb686de573, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -143,10 +143,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_VideoClip: {fileID: 32900000, guid: 7ee057f60c3ff4e25a1738bc7ccfa565, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: 0d35beda58c44115bd6cbbeb686de573, type: 3}
   m_EditorFallbackClip: {fileID: 0}
   m_EditorOpaqueFallbackClip: {fileID: 0}
   m_TexturePropertyName: _BaseMap
+  m_AlphaLayout: 1
   m_FlipVertical: 0
   m_PlayAudio: 1
   m_SpatialBlend: 1

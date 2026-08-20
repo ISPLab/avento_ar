@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.5.6f1
-CRC: 2644585284
+CRC: 3880075670
 HashAppended: 0
 AssetBundleManifest:
   AssetBundleInfos:
     Info_0:
-      Name: art-galary.android.bundle
+      Name: a_bouquet_of_flowers.ios.bundle
       Dependencies: {}

@@ -35,6 +35,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _AlphaCutoff: 0.05
+    - _AlphaLayout: 0
     - _Opacity: 1
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}

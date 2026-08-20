@@ -6,6 +6,9 @@ Shader "AR/VideoSpriteTransparent"
         [MainColor] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
         _Opacity("Opacity", Range(0, 1)) = 1
         _AlphaCutoff("Alpha Cutoff", Range(0, 0.5)) = 0.02
+        // 0 = embedded alpha in _BaseMap.a (HEVC-with-alpha / PNG)
+        // 1 = side-by-side: left RGB, right grayscale alpha (H.264 — reliable on iOS)
+        _AlphaLayout("Alpha Layout", Float) = 0
     }
 
     SubShader
@@ -42,6 +45,7 @@ Shader "AR/VideoSpriteTransparent"
                 half4 _BaseColor;
                 half _Opacity;
                 half _AlphaCutoff;
+                half _AlphaLayout;
             CBUFFER_END
 
             struct Attributes
@@ -71,17 +75,25 @@ Shader "AR/VideoSpriteTransparent"
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-                half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
 
-                // Some mobile VideoPlayer paths write RGB but leave alpha at 0.
-                // Recover visible pixels; keep true transparent black background.
-                half luma = max(color.r, max(color.g, color.b));
-                if (color.a < 0.01h && luma > 0.04h)
-                    color.a = 1.0h;
+                half4 color;
+                if (_AlphaLayout > 0.5h)
+                {
+                    // Side-by-side: left = color, right = alpha matte.
+                    float2 uvColor = float2(input.uv.x * 0.5, input.uv.y);
+                    float2 uvAlpha = float2(0.5 + input.uv.x * 0.5, input.uv.y);
+                    color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uvColor);
+                    color.a = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uvAlpha).r;
+                }
+                else
+                {
+                    color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);
+                }
 
-                color.a = smoothstep(0.0h, _AlphaCutoff, color.a);
+                color *= _BaseColor;
                 color.a *= saturate(_Opacity);
-                if (color.a <= 0.001h)
+
+                if (color.a <= _AlphaCutoff)
                     discard;
 
                 return color;

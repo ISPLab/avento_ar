@@ -1,0 +1,41 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.5.6f1
+CRC: 2274564478
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 3c74e22024fe3c0c313e366db731d383
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 6b248178ff85000b730af8364d3460a0
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 8118904f8f85708185b324c41fcc6321
+HashAppended: 0
+ClassTypes:
+- Class: 1
+  Script: {instanceID: 0}
+- Class: 4
+  Script: {instanceID: 0}
+- Class: 21
+  Script: {instanceID: 0}
+- Class: 23
+  Script: {instanceID: 0}
+- Class: 33
+  Script: {instanceID: 0}
+- Class: 43
+  Script: {instanceID: 0}
+- Class: 48
+  Script: {instanceID: 0}
+- Class: 114
+  Script: {fileID: 11500000, guid: da1d24b6d65e47c5a545bbb0f6647fa4, type: 3}
+- Class: 115
+  Script: {instanceID: 0}
+- Class: 328
+  Script: {instanceID: 0}
+- Class: 329
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Scenes/demos/a_bouquet_of_flowers/PlacedContent.prefab
+Dependencies: []

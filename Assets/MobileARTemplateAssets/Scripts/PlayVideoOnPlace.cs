@@ -8,8 +8,8 @@ namespace UnityEngine.XR.Templates.AR
 {
     /// <summary>
     /// Plays a looping alpha video on a transparent billboard.
-    /// Uses RenderTexture in the Editor/XR Simulation (more reliable) and
-    /// MaterialOverride on device.
+    /// Always uses an ARGB32 RenderTexture so HEVC-with-alpha reaches the shader
+    /// (MaterialOverride on iOS often writes opaque RGB and drops alpha → black box).
     /// Resizes the quad X/Y to the video pixel aspect using the authored sprite
     /// scale as the bounding box (same behaviour as <see cref="PlayImageOnPlace"/>).
     /// </summary>
@@ -27,6 +27,17 @@ namespace UnityEngine.XR.Templates.AR
             FitWidth = 2,
         }
 
+        public enum AlphaLayout
+        {
+            /// <summary>Alpha in the video frame (_BaseMap.a). HEVC-with-alpha / ProRes / PNG.</summary>
+            Embedded = 0,
+            /// <summary>
+            /// Side-by-side H.264/HEVC without an alpha track: left = RGB, right = grayscale matte.
+            /// Reliable on iOS where Unity VideoPlayer often drops HEVC-with-alpha.
+            /// </summary>
+            SideBySide = 1,
+        }
+
         [SerializeField]
         VideoClip m_VideoClip;
 
@@ -39,12 +50,18 @@ namespace UnityEngine.XR.Templates.AR
 
         [Tooltip(
             "Optional opaque H.264 used in Editor / Simulator when the alpha fallback is missing. " +
-            "Device always uses Video Clip (walking_man_device HEVC-with-alpha; do not ship ProRes).")]
+            "Device always uses Video Clip (HEVC-with-alpha or side-by-side; do not ship ProRes).")]
         [SerializeField]
         VideoClip m_EditorOpaqueFallbackClip;
 
         [SerializeField]
         string m_TexturePropertyName = "_BaseMap";
+
+        [Tooltip(
+            "Embedded = alpha in clip (HEVC-with-alpha). " +
+            "SideBySide = left RGB / right matte H.264 (recommended for iOS device).")]
+        [SerializeField]
+        AlphaLayout m_AlphaLayout = AlphaLayout.Embedded;
 
         [SerializeField]
         bool m_FlipVertical;
@@ -120,20 +137,24 @@ namespace UnityEngine.XR.Templates.AR
         bool m_ApproachActive;
 
         /// <summary>
-        /// Editor / OSX Simulator: RenderTexture + optional fallback clips.
-        /// iOS / Android: MaterialOverride + <see cref="m_VideoClip"/> (HEVC-with-alpha
-        /// MOV that AVFoundation can decode). Do not ship Apple ProRes in the AssetBundle.
+        /// Always use an ARGB32 RenderTexture so HEVC-with-alpha is preserved into
+        /// the material. (iOS MaterialOverride often drops alpha → opaque black box.)
         /// </summary>
-        static bool UseRenderTexturePath =>
+        static bool UseRenderTexturePath => true;
+
+        /// <summary>
+        /// Editor / macOS Simulator only: optional QT-RLE / opaque H.264 fallbacks.
+        /// Device always uses <see cref="m_VideoClip"/> (HEVC-with-alpha; no ProRes).
+        /// </summary>
+        static bool UseEditorFallbackClips =>
             Application.isEditor || Application.platform == RuntimePlatform.OSXPlayer;
 
         /// <summary>
-        /// Device → authored alpha clip. Editor/Sim → editor fallbacks when assigned
-        /// (same split as the working “man on place on iphone” setup).
+        /// Device → authored alpha clip. Editor/Sim → editor fallbacks when assigned.
         /// </summary>
         VideoClip ResolveActiveClip()
         {
-            if (UseRenderTexturePath)
+            if (UseEditorFallbackClips)
             {
                 if (m_EditorFallbackClip != null)
                     return m_EditorFallbackClip;
@@ -439,6 +460,7 @@ namespace UnityEngine.XR.Templates.AR
             // Instance material once so MaterialOverride / RT write the same material the shader uses.
             var material = m_Renderer.material;
             ApplyFlip(material);
+            ApplyAlphaLayout(material);
 
             m_VideoPlayer.playOnAwake = false;
             m_VideoPlayer.waitForFirstFrame = true;
@@ -449,7 +471,7 @@ namespace UnityEngine.XR.Templates.AR
             // Quad is resized to the pixel aspect; texture should fill that quad.
             m_VideoPlayer.aspectRatio = VideoAspectRatio.Stretch;
 
-            if (!UseRenderTexturePath &&
+            if (!UseEditorFallbackClips &&
                 activeClip.originalPath != null &&
                 activeClip.originalPath.IndexOf("man_with_transparent.mov", System.StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -468,30 +490,19 @@ namespace UnityEngine.XR.Templates.AR
             // Best-effort early fit from clip metadata (often 0 until Prepare on some platforms).
             TryFitFromClipMetadata(activeClip);
 
-            if (UseRenderTexturePath)
-            {
-                EnsureRenderTexture(activeClip);
-                ClearRenderTexture(m_RenderTexture);
-                m_VideoPlayer.renderMode = VideoRenderMode.RenderTexture;
-                m_VideoPlayer.targetTexture = m_RenderTexture;
-                m_VideoPlayer.targetMaterialRenderer = null;
-                ApplyTexture(material, m_RenderTexture);
-                Debug.Log(
-                    $"[VideoSprite] RenderTexture path (Editor/Sim) clip='{activeClip.name}'.",
-                    this);
-            }
-            else
-            {
-                // Device: VideoPlayer writes frames into _BaseMap on this renderer.
-                m_VideoPlayer.renderMode = VideoRenderMode.MaterialOverride;
-                m_VideoPlayer.targetTexture = null;
-                m_VideoPlayer.targetMaterialRenderer = m_Renderer;
-                m_VideoPlayer.targetMaterialProperty = m_TexturePropertyName;
-                Debug.Log(
-                    $"[VideoSprite] MaterialOverride path (Device) clip='{activeClip.name}' " +
-                    $"prop={m_TexturePropertyName} renderer={m_Renderer.name}.",
-                    this);
-            }
+            // ARGB32 RT keeps the alpha plane from HEVC-with-alpha. Do not use
+            // MaterialOverride on iOS — it commonly composites onto opaque black.
+            EnsureRenderTexture(activeClip);
+            ClearRenderTexture(m_RenderTexture);
+            m_VideoPlayer.renderMode = VideoRenderMode.RenderTexture;
+            m_VideoPlayer.targetTexture = m_RenderTexture;
+            m_VideoPlayer.targetMaterialRenderer = null;
+            ApplyTexture(material, m_RenderTexture);
+            Debug.Log(
+                $"[VideoSprite] RenderTexture path clip='{activeClip.name}' " +
+                $"layout={m_AlphaLayout} " +
+                $"rt={(m_RenderTexture != null ? $"{m_RenderTexture.width}x{m_RenderTexture.height}" : "null")}.",
+                this);
 
             ApplyOpacity(material);
             m_Renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -600,10 +611,17 @@ namespace UnityEngine.XR.Templates.AR
             if (!m_FitQuadToAspect || width <= 0 || height <= 0)
                 return;
 
+            // Full frame size for the RT (SBS is wider); billboard aspect uses color half only.
+            var rtWidth = width;
+            var rtHeight = height;
+            var aspectWidth = m_AlphaLayout == AlphaLayout.SideBySide
+                ? Mathf.Max(1, width / 2)
+                : width;
+
             if (!m_HasBaseScale || m_BaseLocalScale == Vector3.zero)
                 CaptureBaseScale();
 
-            var videoAspect = (float)width / height;
+            var videoAspect = (float)aspectWidth / height;
             var baseX = Mathf.Abs(m_BaseLocalScale.x);
             var baseY = Mathf.Abs(m_BaseLocalScale.y);
             if (baseX < 1e-5f)
@@ -648,7 +666,16 @@ namespace UnityEngine.XR.Templates.AR
             transform.localScale = scale;
 
             if (UseRenderTexturePath && ResolveActiveClip() != null)
-                EnsureRenderTexture(ResolveActiveClip(), width, height);
+                EnsureRenderTexture(ResolveActiveClip(), rtWidth, rtHeight);
+        }
+
+        void ApplyAlphaLayout(Material material)
+        {
+            if (material == null)
+                return;
+
+            if (material.HasProperty("_AlphaLayout"))
+                material.SetFloat("_AlphaLayout", (float)m_AlphaLayout);
         }
 
         void EnsureRenderTexture(VideoClip clip)
@@ -770,10 +797,12 @@ namespace UnityEngine.XR.Templates.AR
                 if (m_VideoPlayer != null)
                     m_VideoPlayer.targetTexture = m_RenderTexture;
                 ApplyTexture(m_Renderer.material, m_RenderTexture);
+                ApplyAlphaLayout(m_Renderer.material);
                 ApplyOpacity(m_Renderer.material);
             }
             else if (m_Renderer != null)
             {
+                ApplyAlphaLayout(m_Renderer.material);
                 ApplyOpacity(m_Renderer.material);
             }
 
@@ -786,7 +815,10 @@ namespace UnityEngine.XR.Templates.AR
             // Some platforms only expose stable width/height after the first frame.
             ApplyFitFromPreparedSource(source);
             if (m_Renderer != null)
+            {
+                ApplyAlphaLayout(m_Renderer.material);
                 ApplyOpacity(m_Renderer.material);
+            }
             BeginApproachIfEnabled();
             Debug.Log(
                 $"[VideoSprite] started playing={source.isPlaying} " +
