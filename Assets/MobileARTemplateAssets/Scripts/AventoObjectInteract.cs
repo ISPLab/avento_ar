@@ -226,7 +226,7 @@ namespace UnityEngine.XR.Templates.AR
             Debug.Log($"[AventoObjectInteract] AskTessaFromCaption id={id} title={title} jsonLen={json.Length}", this);
             AventoUnityAudioGate.SetTessaVoiceActive(true);
             AventoUnityNative.NotifyObjectInteract(json);
-            AventoTessaVoiceBar.Show();
+            AventoTessaVoiceBar.Hide();
         }
 
         void SetVideoPausedForCaption(bool paused)

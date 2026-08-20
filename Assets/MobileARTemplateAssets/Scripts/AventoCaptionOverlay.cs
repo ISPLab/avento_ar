@@ -17,7 +17,9 @@ namespace UnityEngine.XR.Templates.AR
         AventoObjectInteract m_Source;
         int m_ShowFrame = -10;
         Rect m_PanelRect;
+        Rect m_AskIconRect;
         Rect m_AskButtonRect;
+        Vector2 m_BodyScroll = Vector2.zero;
         GUIStyle m_TitleStyle;
         GUIStyle m_BodyStyle;
         GUIStyle m_HintStyle;
@@ -80,6 +82,7 @@ namespace UnityEngine.XR.Templates.AR
             inst.m_Title = string.IsNullOrWhiteSpace(title) ? "" : title.Trim();
             inst.m_Body = body ?? "";
             inst.m_ShowFrame = Time.frameCount;
+            inst.m_BodyScroll = Vector2.zero;
             inst.enabled = true;
             inst.gameObject.SetActive(true);
         }
@@ -92,6 +95,7 @@ namespace UnityEngine.XR.Templates.AR
             s_Instance.m_Source = null;
             s_Instance.m_Title = "";
             s_Instance.m_Body = "";
+            s_Instance.m_BodyScroll = Vector2.zero;
             if (source != null)
                 source.NotifyCaptionClosed();
         }
@@ -116,8 +120,9 @@ namespace UnityEngine.XR.Templates.AR
 
             var imgui = new Vector2(unityScreenPosition.x, Screen.height - unityScreenPosition.y);
 
-            // "Ask Avento" button inside the panel.
-            if (s_Instance.m_AskButtonRect.width > 1f && s_Instance.m_AskButtonRect.Contains(imgui))
+            var hitAskIcon = s_Instance.m_AskIconRect.width > 1f && s_Instance.m_AskIconRect.Contains(imgui);
+            var hitAskButton = s_Instance.m_AskButtonRect.width > 1f && s_Instance.m_AskButtonRect.Contains(imgui);
+            if (hitAskIcon || hitAskButton)
             {
                 var source = s_Instance.m_Source;
                 Hide();
@@ -138,21 +143,27 @@ namespace UnityEngine.XR.Templates.AR
 
             EnsureStyles();
 
-            var pad = Mathf.Max(24f, Screen.width * 0.06f);
-            var width = Mathf.Min(Screen.width - pad * 2f, 560f);
-            var maxH = Screen.height * 0.55f;
+            var pad = Mathf.Max(12f, Screen.width * 0.03f);
+            var width = Mathf.Min(Screen.width - pad * 2f, 920f);
+            var maxH = Screen.height * 0.62f;
             var innerW = width - 32f;
-            var titleH = string.IsNullOrEmpty(m_Title) ? 0f : m_TitleStyle.CalcHeight(new GUIContent(m_Title), innerW);
-            var bodyH = m_BodyStyle.CalcHeight(new GUIContent(string.IsNullOrWhiteSpace(m_Body) ? " " : m_Body), innerW);
-            var buttonH = Mathf.Max(48f, Screen.height / 22f);
+            var iconSize = Mathf.Max(44f, Screen.height / 18f);
+            var iconGap = 10f;
+            var titleAreaW = innerW - iconSize - iconGap;
+            var titleH = string.IsNullOrEmpty(m_Title)
+                ? 0f
+                : m_TitleStyle.CalcHeight(new GUIContent(m_Title), titleAreaW);
+            var bodyText = string.IsNullOrWhiteSpace(m_Body) ? " " : m_Body;
+            var bodyH = m_BodyStyle.CalcHeight(new GUIContent(bodyText), innerW);
+            var buttonH = Mathf.Max(50f, Screen.height / 16f);
             var hintH = m_HintStyle.lineHeight + 6f;
-            var height = Mathf.Min(maxH, 28f + titleH + bodyH + buttonH + hintH + 28f);
+            var headerH = Mathf.Max(iconSize, titleH > 0f ? titleH : 0f) + 8f;
+            var height = Mathf.Min(maxH, 28f + headerH + bodyH + buttonH + hintH + 34f);
             var panelX = (Screen.width - width) * 0.5f;
             var panelY = (Screen.height - height) * 0.5f;
             m_PanelRect = new Rect(panelX, panelY, width, height);
 
             var prev = GUI.color;
-            // Dim the AR background behind the centered panel.
             GUI.color = new Color(0f, 0f, 0f, 0.45f);
             GUI.Box(new Rect(0, 0, Screen.width, Screen.height), GUIContent.none);
 
@@ -161,26 +172,70 @@ namespace UnityEngine.XR.Templates.AR
             GUI.color = prev;
 
             var inner = new Rect(m_PanelRect.x + 16f, m_PanelRect.y + 16f, m_PanelRect.width - 32f, m_PanelRect.height - 20f);
+
+            m_AskIconRect = new Rect(inner.xMax - iconSize, inner.y, iconSize, iconSize);
+            GUI.color = new Color(0.22f, 0.48f, 0.95f, 1f);
+            GUI.Box(m_AskIconRect, GUIContent.none);
+            GUI.color = prev;
+            DrawMicIcon(m_AskIconRect);
+
             if (!string.IsNullOrEmpty(m_Title))
             {
-                GUI.Label(new Rect(inner.x, inner.y, inner.width, titleH), m_Title, m_TitleStyle);
-                inner.y += titleH + 6f;
-                inner.height -= titleH + 6f;
+                GUI.Label(new Rect(inner.x, inner.y, titleAreaW, headerH), m_Title, m_TitleStyle);
             }
 
-            var bodyAreaH = inner.height - buttonH - hintH - 12f;
-            GUI.Label(new Rect(inner.x, inner.y, inner.width, bodyAreaH), m_Body, m_BodyStyle);
+            inner.y += headerH;
+            inner.height -= headerH;
+
+            var bodyAreaH = inner.height - buttonH - hintH - 14f;
+            var bodyAreaRect = new Rect(inner.x, inner.y, inner.width, bodyAreaH);
+            var contentH = Mathf.Max(bodyAreaH, bodyH + 8f);
+            var bodyViewRect = new Rect(0f, 0f, inner.width - 18f, contentH);
+            m_BodyScroll = GUI.BeginScrollView(
+                bodyAreaRect,
+                m_BodyScroll,
+                bodyViewRect,
+                false,
+                true);
+            GUI.Label(new Rect(0f, 0f, bodyViewRect.width, contentH), bodyText, m_BodyStyle);
+            GUI.EndScrollView();
 
             m_AskButtonRect = new Rect(inner.x, m_PanelRect.yMax - hintH - buttonH - 10f, inner.width, buttonH);
             GUI.color = new Color(0.22f, 0.48f, 0.95f, 1f);
             GUI.Box(m_AskButtonRect, GUIContent.none);
             GUI.color = prev;
-            GUI.Label(m_AskButtonRect, "Ask Avento", m_AskButtonStyle);
+            DrawMicIcon(new Rect(m_AskButtonRect.x + 10f, m_AskButtonRect.y + 6f, buttonH - 12f, buttonH - 12f));
+            GUI.Label(
+                new Rect(m_AskButtonRect.x + buttonH, m_AskButtonRect.y, m_AskButtonRect.width - buttonH, m_AskButtonRect.height),
+                "Ask Avento",
+                m_AskButtonStyle);
 
             GUI.Label(
                 new Rect(inner.x, m_PanelRect.yMax - hintH - 6f, inner.width, hintH),
                 "Tap anywhere to close",
                 m_HintStyle);
+        }
+
+        static void DrawMicIcon(Rect rect)
+        {
+            var prev = GUI.color;
+            GUI.color = Color.white;
+
+            var cx = rect.x + rect.width * 0.5f;
+            var headW = rect.width * 0.34f;
+            var headH = rect.height * 0.40f;
+            var head = new Rect(cx - headW * 0.5f, rect.y + rect.height * 0.14f, headW, headH);
+            GUI.Box(head, GUIContent.none);
+
+            var stemW = rect.width * 0.10f;
+            var stemH = rect.height * 0.18f;
+            GUI.Box(new Rect(cx - stemW * 0.5f, head.yMax - 1f, stemW, stemH), GUIContent.none);
+
+            var baseW = rect.width * 0.46f;
+            var baseH = Mathf.Max(3f, rect.height * 0.07f);
+            GUI.Box(new Rect(cx - baseW * 0.5f, head.yMax + stemH + 1f, baseW, baseH), GUIContent.none);
+
+            GUI.color = prev;
         }
 
         void EnsureStyles()
@@ -215,7 +270,7 @@ namespace UnityEngine.XR.Templates.AR
             {
                 fontSize = Mathf.Max(20, Screen.height / 42),
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = TextAnchor.MiddleLeft,
                 wordWrap = false,
                 normal = { textColor = Color.white }
             };
